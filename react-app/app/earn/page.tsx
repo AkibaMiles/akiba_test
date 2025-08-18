@@ -1,0 +1,181 @@
+"use client";
+
+import MiniPointsCard from "@/components/mini-points-card";
+import DailyChallenges from "@/components/daily-challenge";
+import PartnerQuests from "@/components/partner-quests";
+import EarnPartnerQuestSheet from "@/components/earn-partner-quest-sheet";
+import SuccessModal from "@/components/success-modal";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { useWeb3 } from "@/contexts/useWeb3";
+import React, { useEffect, useMemo, useState } from "react";
+import { USDT } from "@/lib/svg";
+import Image from "next/image";
+import { Sheet, SheetClose, SheetContent, SheetFooter } from "@/components/ui/sheet";
+import { Download, Question } from "@phosphor-icons/react";
+import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
+
+export default function EarnPage() {
+  // ✅ one call
+  const web3 = useWeb3() as any;
+  const { address, getUserAddress, getakibaMilesBalance, getUserVaultBalance } = web3;
+
+  const [balance, setBalance] = useState("0");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [vaultHelp, setVaultHelp] = useState(false);
+  const [currentDeposit, setCurrentDeposit] = useState<number>(0);
+  const [quest, setQuest] = useState<any>(null);
+  const [success, setSuccess] = useState(false);
+  const [vaultDeposit, setVaultDeposit] = useState<number>(0);
+
+  const router = useRouter();
+
+  useEffect(() => { getUserAddress?.(); }, [getUserAddress]);
+  useEffect(() => {
+    const fetchBalance = async () => {
+      if (!address) return;
+      try {
+        const balance = await getUserVaultBalance();
+        setCurrentDeposit(balance); // ← number
+      } catch (e) { console.log(e); }
+    };
+    fetchBalance();
+  }, [address, getUserVaultBalance]);
+
+  useEffect(() => {
+    if (!address) return;
+    (async () => {
+      const b = await getakibaMilesBalance?.();
+      if (b != null) setBalance(b);
+
+      const d = await web3?.getVaultDeposit?.().catch(() => null);
+      if (d != null) setVaultDeposit(Number(d));
+    })();
+  }, [address, getakibaMilesBalance, web3]);
+
+  const openQuest = (q: any) => { setQuest(q); setSheetOpen(true); };
+
+  const goDeposit = () => router.push("/vaults");
+  const goWithdraw = () => router.push("/vaults/withdraw");
+  const hasDeposit = currentDeposit > 0;
+
+  return (
+    <main className="pb-24 font-sterling">
+      <div className="px-4 flex flex-col justify-around gap-1 mb-4">
+        <h1 className="text-2xl font-medium">Earn</h1>
+        <p className="font-poppins">Complete challenges to earn AkibaMiles.</p>
+      </div>
+      <MiniPointsCard points={Number(balance)} />
+
+      <div className="px-4 ">
+        <div className="mt-6 gap-1">
+          <div className="flex justify-between items-center my-2">
+            <h3 className="text-lg font-medium">Akiba Vault</h3>
+            <Question size={20} onClick={() => setVaultHelp(true)} />
+          </div>
+          <p className="text-gray-500">Deposit USDT to earn akibaMiles daily.</p>
+        </div>
+
+        <div className="border border-[#238D9D4D] bg-gradient-to-bl from-[#76E0F0] to-[#F0FDFF] rounded-xl p-4">
+          <div className="flex flex-col justify-center items-center p-5 border border-[#238D9D4D] bg-white rounded-xl">
+            <h4>My Deposit(USDT)</h4>
+            <div className="flex ">
+              <Image src={USDT} alt="" />
+              <h3 className="mx-2">{currentDeposit}</h3>
+            </div>
+            {hasDeposit && (
+              <p className="mt-2 text-xs text-[#238D9D] font-semibold">
+                200 AkibaMiles earned
+              </p>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              title="Deposit"
+              onClick={goDeposit}
+              widthFull
+              className="w-full rounded-2xl mt-5 py-4 flex items-center justify-center gap-3 font-medium tracking-wide shadow-sm text-white bg-[#238D9D] hover:bg-[#238D9D] disabled:bg-[#238D9D]"
+            />
+            <Button
+              title="Withdraw"
+              onClick={goWithdraw}
+              widthFull
+              disabled={!hasDeposit}
+              className="w-full rounded-2xl mt-5 py-4 flex items-center justify-center gap-3 font-medium tracking-wide shadow-sm bg-[#238D9D1A] text-[#238D9D]"
+            />
+          </div>
+        </div>
+
+        <Sheet open={vaultHelp} onOpenChange={setVaultHelp}>
+          <SheetContent side={"bottom"} className="bg-white">
+            <div className="flex gap-3 items-start">
+              <Download />
+              <div>
+                <h2 className="font-semibold">Deposit USDT</h2>
+                <p>Deposit USDT into the Akiba Vault and earn 1 AkibaMile per day for every 1 USDT you hold.</p>
+              </div>
+            </div>
+            <SheetFooter className="mt-8">
+              <SheetClose asChild>
+                <Button
+                  title="Close"
+                  widthFull
+                  variant="secondary"
+                  className="bg-[#238D9D1A] text-[#238D9D] rounded-md"
+                  onClick={() => setVaultHelp(false)}
+                />
+              </SheetClose>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      </div>
+
+      {/* Tabs */}
+      <Tabs defaultValue="active" className="mx-4">
+        <TabsList>
+          <TabsTrigger
+            value="active"
+            className="bg-[#EBEBEB] text-[#8E8B8B]
+                       data-[state=active]:bg-[#ADF4FF80]
+                       data-[state=active]:text-[#238D9D]
+                       rounded-full font-medium"
+          >
+            Active
+          </TabsTrigger>
+          <TabsTrigger
+            value="completed"
+            className="ml-1 bg-[#EBEBEB] text-[#8E8B8B]
+                       data-[state=active]:bg-[#ADF4FF80]
+                       data-[state=active]:text-[#238D9D]
+                       rounded-full font-medium"
+          >
+            Completed
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="active">
+          <div className=" mt-6 gap-1">
+            <h3 className="text-lg font-medium mt-6 mb-2">Daily challenges</h3>
+            <p className="text-gray-500">Completed a challenge? Click & claim Miles</p>
+          </div>
+          <DailyChallenges />
+          <PartnerQuests openPopup={(q:any)=>{ setQuest(q); setSheetOpen(true); }} />
+        </TabsContent>
+
+        <TabsContent value="completed">
+          <h3 className="text-lg font-medium mt-6 mb-2">Completed today</h3>
+          <DailyChallenges showCompleted />
+        </TabsContent>
+      </Tabs>
+
+      {/* sheets / modals */}
+      <EarnPartnerQuestSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        quest={quest}
+        setOpenSuccess={setSuccess}
+      />
+      <SuccessModal openSuccess={success} setOpenSuccess={setSuccess} />
+    </main>
+  );
+}
