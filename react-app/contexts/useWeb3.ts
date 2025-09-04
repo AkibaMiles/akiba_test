@@ -13,7 +13,7 @@ import {
   parseUnits,
   erc20Abi
 } from "viem";
-import { celo } from "viem/chains";
+import { celo, celoAlfajores } from "viem/chains";
 import StableTokenABI from "@/contexts/cusd-abi.json";
 import MiniMilesAbi from "@/contexts/minimiles.json";
 import raffleAbi from "@/contexts/miniraffle.json";
@@ -33,7 +33,7 @@ export function useWeb3() {
     if (typeof window === "undefined" || !window.ethereum) return;
     const client = createWalletClient({
       transport: custom(window.ethereum),
-      chain: celo,
+      chain: celoAlfajores,
     });
     setWalletClient(client);
 
@@ -45,7 +45,7 @@ export function useWeb3() {
     if (typeof window !== "undefined" && window.ethereum) {
       let walletClient = createWalletClient({
         transport: custom(window.ethereum),
-        chain: celo,
+        chain: celoAlfajores,
       });
 
       let [address] = await walletClient.getAddresses();
@@ -55,7 +55,7 @@ export function useWeb3() {
   };
 
   const publicClient = createPublicClient({
-    chain: celo,
+    chain: celoAlfajores,
     transport: http(),
   });
 
@@ -65,7 +65,7 @@ export function useWeb3() {
     if (!address) throw new Error("Wallet not connected");
     const miniMiles = getContract({
       abi: MiniMilesAbi.abi,
-      address: "0xEeD878017f027FE96316007D0ca5fDA58Ee93a6b",
+      address: "0xd59AE111d976342ff58c6dE2B6f2b002415825C1",
       client: publicClient,
     });
     const raw: bigint = await miniMiles.read.balanceOf([address]) as bigint;
@@ -94,7 +94,7 @@ export function useWeb3() {
       if (!walletClient || !address) throw new Error("Wallet not connected");
 
       const hash = await walletClient.writeContract({
-        address: '0xD75dfa972C6136f1c594Fec1945302f885E1ab29',
+        address: '0x72fefd4e943475c5cb7cf11753fe60d04aeb7ff0',
         abi: raffleAbi.abi,
         functionName: "joinRaffle",
         account: address,
