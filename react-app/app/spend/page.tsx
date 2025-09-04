@@ -47,7 +47,7 @@ export type PhysicalRaffle = {
   rewardURI?: string        // if you later expose it
 }
 
-export async function fetchActiveRaffles(): Promise<{
+async function fetchActiveRaffles(): Promise<{
   tokenRaffles: TokenRaffle[]
   physicalRaffles: PhysicalRaffle[]
 }> {

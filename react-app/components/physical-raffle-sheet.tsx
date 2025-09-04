@@ -308,6 +308,7 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
                 <Button
                   onClick={handleVerify}
                   disabled={verifying || verified || soldOut || notEnough}
+                  title={verified ? "Verified ✓" : verifying ? "Verifying…" : "Verify entry code"}
                   className={`w-full rounded-xl h-[48px] font-medium ${
                     verified ? "bg-[#18a34a] hover:bg-[#169343]" : "bg-[#238D9D] hover:bg-[#1f7b89]"
                   } text-white`}
