@@ -1,16 +1,16 @@
 // src/app/api/spend/raffle_display/route.ts
 import { NextResponse } from 'next/server'
 import { createPublicClient, formatUnits, http, type Abi, type Address } from 'viem'
-import { celoAlfajores } from 'viem/chains'
+import { celo } from 'viem/chains'
 import raffleAbi from '@/contexts/miniraffle.json'
 import erc20Abi from '@/contexts/cusd-abi.json' // must include symbol(), decimals()
 
-const RAFFLE: Address = '0x72fefd4e943475c5cb7cf11753fe60d04aeb7ff0'
+const RAFFLE: Address = '0xd75dfa972c6136f1c594fec1945302f885e1ab29'
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
 const PRIORITY_TOKEN = '0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e'.toLowerCase() // USDT on Alfajores
 
 const publicClient = createPublicClient({
-  chain: celoAlfajores,
+  chain: celo,
   transport: http(),
 })
 

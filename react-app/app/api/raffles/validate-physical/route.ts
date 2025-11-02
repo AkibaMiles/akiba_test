@@ -2,44 +2,91 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+export const runtime = "nodejs";
+
 const SUPABASE_URL = process.env.SUPABASE_URL!;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY!; // server-side only
-const ENTRY_CODE = (process.env.PHYSICAL_ENTRY_CODE || "").trim().toLowerCase();
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY!;
+const ALLOWED_COUNTRIES = (process.env.ALLOWED_COUNTRY_CODES || "KE")
+  .split(",")
+  .map((s) => s.trim().toUpperCase());
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false },
 });
 
+const emailLooksValid = (s: string) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s ?? "").trim());
+const phoneIsE164254 = (s: string) =>
+  /^\+254\d{9}$/.test(String(s ?? "").trim());
+
 export async function POST(req: Request) {
   try {
-    const { raffleId, address, twitter, code, tickets } = await req.json();
+    // Geo from headers (Vercel sets these in prod)
+    const headers = req.headers;
+    const country = (headers.get("x-vercel-ip-country") || "XX").toUpperCase();
+    const region = headers.get("x-vercel-ip-country-region") || null;
+    const city = headers.get("x-vercel-ip-city") || null;
+    const ip = (headers.get("x-forwarded-for") || "").split(",")[0]?.trim() || null;
 
-    if (!raffleId || !address || !twitter || !code || !tickets) {
+    // Kenya-only in production
+    if (process.env.NODE_ENV === "production" && !ALLOWED_COUNTRIES.includes(country)) {
+      return NextResponse.json(
+        { ok: false, reason: "Kenya-only raffle. Not available in your region." },
+        { status: 403 }
+      );
+    }
+
+    const { raffleId, address, twitter, email, phone, tickets } = await req.json();
+
+    if (!raffleId || !address || !twitter || !email || !tickets) {
       return NextResponse.json({ error: "Missing fields" }, { status: 400 });
     }
-
-    // simple code compare for demo
-    if (ENTRY_CODE.length === 0) {
-      return NextResponse.json({ error: "Server not configured with entry code" }, { status: 500 });
+    if (!emailLooksValid(email)) {
+      return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
     }
-    if (String(code).trim().toLowerCase() !== ENTRY_CODE) {
-      return NextResponse.json({ ok: false, reason: "Invalid entry code" }, { status: 403 });
+    // phone is optional; if present, must be +254…
+    if (phone && !phoneIsE164254(phone)) {
+      return NextResponse.json({ error: "Phone must be Kenyan +2547xxxxxxxx or omitted" }, { status: 400 });
     }
 
-    // upsert twitter handle into users table (by wallet address)
-    await supabase
-      .from("users")
-      .update({ twitter_handle: twitter })
-      .eq("wallet", address.toLowerCase());
+    const wallet = String(address).toLowerCase();
 
-    // log entry for audit
-    await supabase.from("physical_raffle_entries").insert({
+    // upsert user profile (avoid wiping phone if none provided)
+    const updatePayload: Record<string, any> = {
+      twitter_handle: twitter,
+      email,
+    };
+    if (phone) updatePayload.phone = phone;
+
+    await supabase.from("users").update(updatePayload).eq("wallet", wallet);
+
+    // upsert participation (one row per wallet per raffle)
+    const { data: existing } = await supabase
+      .from("physical_raffle_entries")
+      .select("id")
+      .eq("raffle_id", raffleId)
+      .eq("user_address", wallet)
+      .maybeSingle();
+
+    const payload = {
       raffle_id: raffleId,
-      user_address: address.toLowerCase(),
+      user_address: wallet,
       tickets: Number(tickets),
       twitter_handle: twitter,
-      entry_code: String(code),
-    });
+      email,
+      phone: phone ?? null,
+      country_code: country,
+      region,
+      city,
+      ip_addr: ip,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (existing?.id) {
+      await supabase.from("physical_raffle_entries").update(payload).eq("id", existing.id);
+    } else {
+      await supabase.from("physical_raffle_entries").insert(payload);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {

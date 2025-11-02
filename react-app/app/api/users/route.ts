@@ -10,7 +10,7 @@ import {
   getAddress,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { celo } from "viem/chains";
+import { celoAlfajores } from "viem/chains";
 import MiniPointsAbi from "@/contexts/minimiles.json";
 
 /* ── setup ───────────────────────────────────────────────────────── */
@@ -20,8 +20,8 @@ const supabase = createClient(
 );
 
 const account = privateKeyToAccount(`0x${process.env.PRIVATE_KEY!}`);
-const publicClient = createPublicClient({ chain: celo, transport: http() });
-const walletClient = createWalletClient({ account, chain: celo, transport: http() });
+const publicClient = createPublicClient({ chain: celoAlfajores, transport: http() });
+const walletClient = createWalletClient({ account, chain: celoAlfajores, transport: http() });
 
 const TOKEN = process.env.MINIPOINTS_ADDRESS as `0x${string}`;
 
