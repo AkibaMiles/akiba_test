@@ -36,9 +36,11 @@ export async function POST(req: Request) {
       );
     }
 
-    const { raffleId, address, twitter, email, phone, tickets } = await req.json();
+    const body = await req.json();
+    const { raffleId, address, twitter, email, phone } = body;
+    const tickets = body?.tickets; // optional
 
-    if (!raffleId || !address || !twitter || !email || !tickets) {
+    if (!raffleId || !address || !twitter || !email) {
       return NextResponse.json({ error: "Missing fields" }, { status: 400 });
     }
     if (!emailLooksValid(email)) {
@@ -60,32 +62,34 @@ export async function POST(req: Request) {
 
     await supabase.from("users").update(updatePayload).eq("wallet", wallet);
 
-    // upsert participation (one row per wallet per raffle)
-    const { data: existing } = await supabase
-      .from("physical_raffle_entries")
-      .select("id")
-      .eq("raffle_id", raffleId)
-      .eq("user_address", wallet)
-      .maybeSingle();
+    // If tickets provided → upsert participation (persist intent / audit)
+    if (typeof tickets !== "undefined" && tickets !== null) {
+      const { data: existing } = await supabase
+        .from("physical_raffle_entries")
+        .select("id")
+        .eq("raffle_id", raffleId)
+        .eq("user_address", wallet)
+        .maybeSingle();
 
-    const payload = {
-      raffle_id: raffleId,
-      user_address: wallet,
-      tickets: Number(tickets),
-      twitter_handle: twitter,
-      email,
-      phone: phone ?? null,
-      country_code: country,
-      region,
-      city,
-      ip_addr: ip,
-      updated_at: new Date().toISOString(),
-    };
+      const payload = {
+        raffle_id: raffleId,
+        user_address: wallet,
+        tickets: Number(tickets),
+        twitter_handle: twitter,
+        email,
+        phone: phone ?? null,
+        country_code: country,
+        region,
+        city,
+        ip_addr: ip,
+        updated_at: new Date().toISOString(),
+      };
 
-    if (existing?.id) {
-      await supabase.from("physical_raffle_entries").update(payload).eq("id", existing.id);
-    } else {
-      await supabase.from("physical_raffle_entries").insert(payload);
+      if (existing?.id) {
+        await supabase.from("physical_raffle_entries").update(payload).eq("id", existing.id);
+      } else {
+        await supabase.from("physical_raffle_entries").insert(payload);
+      }
     }
 
     return NextResponse.json({ ok: true });
