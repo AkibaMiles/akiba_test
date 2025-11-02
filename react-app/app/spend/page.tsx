@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useWeb3 } from '@/contexts/useWeb3';
 import type { Address } from 'viem'
 import type { PhysicalSpendRaffle } from "@/components/physical-raffle-sheet";
-import { Dice, RaffleImg1, RaffleImg2, RaffleImg3, airpods, laptop, bicycle, nft1, nft2, RaffleImg5 } from '@/lib/img';
+import { Dice, RaffleImg1, RaffleImg2, RaffleImg3, airpods, laptop, bicycle, nft1, nft2, RaffleImg5, speaker, solar, hplaptop, sambuds } from '@/lib/img';
 import { Coin, akibaMilesSymbol } from '@/lib/svg';
 import { Question } from '@phosphor-icons/react';
 import { StaticImageData } from 'next/image';
@@ -67,6 +67,25 @@ const TOKEN_IMAGES: Record<string, StaticImageData> = {
   // default fallback:
   default: RaffleImg3,
 }
+const PHYSICAL_IMAGES: Record<number, StaticImageData> = {
+  67: speaker,
+  68: solar,
+  69: hplaptop,
+  70: sambuds,           // default/fallback you wanted
+};
+
+const PHYSICAL_TITLES: Record<number, string> = {
+  67: 'Bluetooth Speakers HIFI Boomboxes For Laptop,TV',
+  68: 'Outdoor Portable Solar Charger',
+  69: `HP EliteBook 840 G1 Intel Core I5 14" Inch 4GB RAM`,
+  70: 'Samsung Buds 2 Pro True Wireless Bluetooth Earbuds',
+};
+
+const pickPhysicalImage = (raffle: PhysicalRaffle) =>
+  PHYSICAL_IMAGES[raffle.id] ?? sambuds;
+
+const physicalTitle = (raffle: PhysicalRaffle) =>
+  PHYSICAL_TITLES[raffle.id] ?? 'Physical prize';
 
 // Shape it to what SpendPartnerQuestSheet expects:
 type SpendRaffle = {
@@ -171,12 +190,6 @@ const Page = () => {
     return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
   };
 
-
-  const pickPhysicalImage = (raffle: PhysicalRaffle) => {
-    // If you later expose rewardURI metadata, map keywords -> images here
-    return RaffleImg3 // fallback image for physicals
-  }
-
   return (
     <main className="pb-24 font-sterling bg-onboarding">
       <div className="px-4 flex flex-col justify-around gap-1 mb-4">
@@ -238,11 +251,13 @@ const Page = () => {
         <div className="flex gap-3 overflow-x-auto">
         {physicalRaffles.map((r) => {
   const cardImg = pickPhysicalImage(r);
+  const title = physicalTitle(r);
+
   return (
     <RaffleCard
       key={r.id}
       image={cardImg}
-      title={`Physical prize${r.prizeNFT ? '' : ''}`}
+      title={title}
       endsIn={formatEndsIn(r.ends)}
       ticketCost={`${r.ticketCost} AkibaMiles for 1 ticket`}
       icon={akibaMilesSymbol}
@@ -251,7 +266,7 @@ const Page = () => {
         setSpendRaffle(null);
         setPhysicalRaffle({
           id: r.id,
-          title: 'Physical prize',
+          title,
           endDate: formatEndsIn(r.ends),
           ticketCost: r.ticketCost,
           image: cardImg,
@@ -259,11 +274,12 @@ const Page = () => {
           totalTickets: r.totalTickets,
           maxTickets: r.maxTickets,
         });
-        setActiveSheet("physical");  // <-- only this one opens
+        setActiveSheet("physical");
       }}
     />
-  )
+  );
 })}
+
 
           {physicalRaffles.length === 0 && (
             <div className="text-sm opacity-70 px-2 py-4">No physical raffles live right now.</div>

@@ -348,7 +348,7 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Kenyan phone (optional)</label>
+                  <label className="block text-sm font-medium mb-1">Kenyan phone number</label>
                   <div className="flex items-center border rounded-xl overflow-hidden">
                     <span className="px-3 py-2 bg-gray-50 text-gray-700 select-none">+254</span>
                     <input
@@ -362,7 +362,7 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
                     />
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    Optional. Enter 9 digits after +254 (e.g. 7xxxxxxxx).
+                    Enter 9 digits after +254 (e.g. 7xxxxxxxx).
                   </p>
                 </div>
 
