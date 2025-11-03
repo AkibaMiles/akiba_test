@@ -16,6 +16,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
 
 const emailLooksValid = (s: string) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s ?? "").trim());
+
 const phoneIsE164254 = (s: string) =>
   /^\+254\d{9}$/.test(String(s ?? "").trim());
 
@@ -46,34 +47,50 @@ export async function POST(req: Request) {
     if (!emailLooksValid(email)) {
       return NextResponse.json({ error: "Invalid email address" }, { status: 400 });
     }
-    // phone is optional; if present, must be +254…
+    // phone is optional; if present, must be Kenyan +254#########
     if (phone && !phoneIsE164254(phone)) {
-      return NextResponse.json({ error: "Phone must be Kenyan +2547xxxxxxxx or omitted" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Phone must be Kenyan +2547xxxxxxxx or omitted" },
+        { status: 400 }
+      );
     }
 
-    const wallet = String(address).toLowerCase();
+    const user_address = String(address).toLowerCase();
 
-    // upsert user profile (avoid wiping phone if none provided)
-    const updatePayload: Record<string, any> = {
+    // --- Upsert user profile (creates row if it doesn't exist) ---
+    const upsertPayload: Record<string, any> = {
+      user_address,                 // PRIMARY KEY / UNIQUE
       twitter_handle: twitter,
       email,
+      ...(phone ? { phone } : {}),  // don't send 'phone' if missing (prevents wiping)
+      updated_at: new Date().toISOString(),
     };
-    if (phone) updatePayload.phone = phone;
 
-    await supabase.from("users").update(updatePayload).eq("wallet", wallet);
+    const { error: upsertErr } = await supabase
+      .from("users")
+      .upsert(upsertPayload, { onConflict: "user_address" });
 
-    // If tickets provided → upsert participation (persist intent / audit)
+    if (upsertErr) {
+      return NextResponse.json({ error: "Failed to save user", details: upsertErr.message }, { status: 500 });
+    }
+
+    // --- If tickets provided, log/merge participation row for audit ---
     if (typeof tickets !== "undefined" && tickets !== null) {
-      const { data: existing } = await supabase
+      // Check if a row exists for this raffle + user
+      const { data: existing, error: selErr } = await supabase
         .from("physical_raffle_entries")
         .select("id")
         .eq("raffle_id", raffleId)
-        .eq("user_address", wallet)
+        .eq("user_address", user_address)
         .maybeSingle();
 
-      const payload = {
+      if (selErr) {
+        return NextResponse.json({ error: "Lookup failed", details: selErr.message }, { status: 500 });
+      }
+
+      const entryPayload = {
         raffle_id: raffleId,
-        user_address: wallet,
+        user_address,
         tickets: Number(tickets),
         twitter_handle: twitter,
         email,
@@ -86,9 +103,20 @@ export async function POST(req: Request) {
       };
 
       if (existing?.id) {
-        await supabase.from("physical_raffle_entries").update(payload).eq("id", existing.id);
+        const { error: updErr } = await supabase
+          .from("physical_raffle_entries")
+          .update(entryPayload)
+          .eq("id", existing.id);
+        if (updErr) {
+          return NextResponse.json({ error: "Failed to update entry", details: updErr.message }, { status: 500 });
+        }
       } else {
-        await supabase.from("physical_raffle_entries").insert(payload);
+        const { error: insErr } = await supabase
+          .from("physical_raffle_entries")
+          .insert(entryPayload);
+        if (insErr) {
+          return NextResponse.json({ error: "Failed to create entry", details: insErr.message }, { status: 500 });
+        }
       }
     }
 
