@@ -174,7 +174,7 @@ export default function SpendPartnerQuestSheet({
     }
   };
 
-  // Block explorer URL (Alfajores)
+  // Block explorer URL ()
   const explorerBase = "https://celoscan.io/tx";
 
   return (

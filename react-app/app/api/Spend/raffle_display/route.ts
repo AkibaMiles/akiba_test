@@ -7,7 +7,7 @@ import erc20Abi from '@/contexts/cusd-abi.json' // must include symbol(), decima
 
 const RAFFLE: Address = '0xd75dfa972c6136f1c594fec1945302f885e1ab29'
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000'
-const PRIORITY_TOKEN = '0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e'.toLowerCase() // USDT on Alfajores
+const PRIORITY_TOKEN = '0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e'.toLowerCase() // USDT on 
 
 const publicClient = createPublicClient({
   chain: celo,
