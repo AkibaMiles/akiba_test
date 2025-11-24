@@ -22,7 +22,7 @@ export default function PointsCard({ points }: { points: number }) {
                     <Link href="/spend" className="p-3 rounded-xl flex items-center justify-center w-full gap-3 font-medium tracking-wide shadow-sm text-[#238D9D] bg-[#238D9D] hover:bg-[#238D9D] disabled:bg-[#238D9D]">
                         <Image src={TicketAlt} alt="" />  <h3 className="text-white">Spend</h3></Link>
                 </div>
-                <Link href="/history" className="p-3 rounded-xl flex items-center justify-center w-full gap-3 font-medium tracking-wide shadow-sm text-[#238D9D] ">
+                <Link href="/dice" className="p-3 rounded-xl flex items-center justify-center w-full gap-3 font-medium tracking-wide shadow-sm text-[#238D9D] ">
                     <Image src={Transcript} alt="" />  <h3>View History</h3></Link>
             </div>
         </div>

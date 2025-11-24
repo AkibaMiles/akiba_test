@@ -39,7 +39,7 @@ type Props = {
 const explorerBase = "https://celoscan.io/tx";
 
 const emailLooksValid = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
-// Optional Kenyan phone: exactly 9 digits after +254 (e.g. 7xxxxxxxx)
+// Kenyan phone UI piece: exactly 9 digits after +254 (e.g. 7xxxxxxxx)
 const phoneSuffixLooksValid = (s: string) => /^\d{9}$/.test((s || "").trim());
 const toE164254 = (suffix9: string) => `+254${suffix9}`;
 
@@ -55,7 +55,7 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
   // profile + verify
   const [twitter, setTwitter] = useState<string>("");
   const [email, setEmail] = useState<string>("");
-  const [phone9, setPhone9] = useState<string>(""); // optional, 9 digits after +254
+  const [phone9, setPhone9] = useState<string>(""); // REQUIRED, 9 digits after +254
 
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState(false);
@@ -88,7 +88,7 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
     loadProfile();
   }, [open, address]);
 
-  // Auto-verify if details already present & valid when sheet opens
+  // Auto-verify ONLY if twitter+email+phone9 (valid) are already present
   useEffect(() => {
     const canAutoverify =
       open &&
@@ -97,10 +97,10 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
       !autoVerifyTried.current &&
       twitter.trim() &&
       emailLooksValid(email) &&
-      // phone optional; if present it must be valid
-      (!phone9 || phoneSuffixLooksValid(phone9));
+      phoneSuffixLooksValid(phone9) && // ← phone now REQUIRED
+      raffle;
 
-    if (!canAutoverify || !raffle) return;
+    if (!canAutoverify) return;
 
     (async () => {
       autoVerifyTried.current = true;
@@ -110,19 +110,17 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
           method: "POST",
           headers: { "Content-Type": "application/json" },
           cache: "no-store",
-          // NOTE: tickets omitted on purpose → API will geo-check + upsert profile only
+          // tickets omitted → geo-check + upsert profile only
           body: JSON.stringify({
-            raffleId: raffle.id,
+            raffleId: raffle!.id,
             address,
             twitter: twitter.trim(),
             email: email.trim(),
-            phone: phone9 ? toE164254(phone9) : null,
+            phone: toE164254(phone9),
           }),
         });
         const json = await res.json();
-        if (res.ok && json?.ok) {
-          setVerified(true);
-        }
+        if (res.ok && json?.ok) setVerified(true);
       } catch {
         // silent — user can still press Verify manually
       } finally {
@@ -173,6 +171,7 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
     setPhone9(digits);
     // allow auto-verify again if user fixes phone
     autoVerifyTried.current = false;
+    setVerified(false);
   };
 
   const handleVerify = async () => {
@@ -188,9 +187,12 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
       setErrorModal({ title: "Valid email required", desc: "Please enter a valid email address." });
       return;
     }
-    // phone is optional; only validate if present
-    if (phone9 && !phoneSuffixLooksValid(phone9)) {
-      setErrorModal({ title: "Phone invalid", desc: "Enter 9 digits after +254 (e.g. 7xxxxxxxx), or leave empty." });
+    // PHONE NOW REQUIRED
+    if (!phoneSuffixLooksValid(phone9)) {
+      setErrorModal({
+        title: "Kenyan phone required",
+        desc: "Enter 9 digits after +254 (e.g. 7xxxxxxxx).",
+      });
       return;
     }
     if (soldOut) {
@@ -213,8 +215,8 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
           address,
           twitter: twitter.trim(),
           email: email.trim(),
-          phone: phone9 ? toE164254(phone9) : null,
-          tickets: count, // now persist participation intent with ticket count
+          phone: toE164254(phone9),
+          tickets: count, // log participation intent with ticket count
         }),
       });
 
@@ -370,13 +372,13 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
                 </div>
               </div>
 
-              {/* Twitter + Email + optional +254 Phone (no OTP) */}
+              {/* Twitter + Email + REQUIRED +254 Phone (no OTP) */}
               <div className="mb-4 space-y-3">
                 <div>
                   <label className="block text-sm font-medium mb-1">Twitter username</label>
                   <input
                     value={twitter}
-                    onChange={(e) => { setTwitter(e.target.value); autoVerifyTried.current = false; }}
+                    onChange={(e) => { setTwitter(e.target.value); autoVerifyTried.current = false; setVerified(false); }}
                     placeholder="@yourhandle"
                     className="w-full border rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#238D9D]"
                   />
@@ -387,7 +389,7 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
                   <label className="block text-sm font-medium mb-1">Email address</label>
                   <input
                     value={email}
-                    onChange={(e) => { setEmail(e.target.value); autoVerifyTried.current = false; }}
+                    onChange={(e) => { setEmail(e.target.value); autoVerifyTried.current = false; setVerified(false); }}
                     placeholder="you@example.com"
                     inputMode="email"
                     className="w-full border rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#238D9D]"
@@ -396,7 +398,7 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Kenyan phone (optional)</label>
+                  <label className="block text-sm font-medium mb-1">Kenyan phone (required)</label>
                   <div className="flex items-center border rounded-xl overflow-hidden">
                     <span className="px-3 py-2 bg-gray-50 text-gray-700 select-none">+254</span>
                     <input
@@ -410,7 +412,7 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
                     />
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    Optional. Enter 9 digits after +254 (e.g. 7xxxxxxxx).
+                    Enter 9 digits after +254 (e.g. 7xxxxxxxx).
                   </p>
                 </div>
 

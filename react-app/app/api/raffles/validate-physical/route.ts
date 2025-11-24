@@ -63,7 +63,6 @@ export async function POST(req: Request) {
       twitter_handle: twitter,
       email,
       ...(phone ? { phone } : {}),  // don't send 'phone' if missing (prevents wiping)
-      updated_at: new Date().toISOString(),
     };
 
     const { error: upsertErr } = await supabase

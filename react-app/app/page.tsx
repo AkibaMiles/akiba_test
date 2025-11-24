@@ -10,7 +10,7 @@ import { RaffleCard } from "@/components/raffle-card";
 import RafflesWonCard from "@/components/raffle-won-card";
 import { SectionHeading } from "@/components/section-heading";
 import { useWeb3 } from "@/contexts/useWeb3";
-import { RaffleImg1, RaffleImg2, RaffleImg3, RaffleImg5, WinImg } from "@/lib/img";
+import { RaffleImg1, RaffleImg2, RaffleImg3, RaffleImg5, WinImg,solar, speaker, hplaptop, sambuds } from "@/lib/img";
 import { Celo, akibaMilesSymbol } from "@/lib/svg";
 import { useEffect, useState } from "react";
 import { fetchActiveRaffles, type TokenRaffle } from "@/helpers/raffledisplay";
@@ -21,6 +21,8 @@ import dynamic from 'next/dynamic'
 import { RaffleDetails } from "@/components/raffle-details";
 import truncateEthAddress from "truncate-eth-address";
 import SuccessModal from "@/components/success-modal";
+import { PhysicalRaffle } from "./spend/page";
+
 
 const SpendPartnerQuestSheet = dynamic(
   () => import('@/components/spend-partner-quest-sheet'),
@@ -35,6 +37,28 @@ const TOKEN_IMAGES: Record<string, StaticImageData> = {
   // default fallback:
   default: RaffleImg3,
 }
+
+  const PHYSICAL_IMAGES: Record<number, StaticImageData> = {
+    68: speaker,
+    69: solar,
+    70: hplaptop,
+    71: sambuds,           // default/fallback you wanted
+  };
+  
+  const PHYSICAL_TITLES: Record<number, string> = {
+    68: 'Bluetooth Speakers HIFI Boomboxes For Laptop,TV',
+    69: 'Outdoor Portable Solar Charger',
+    70: `HP EliteBook 840 G1 Intel Core I5 14" Inch 4GB RAM`,
+    71: 'Samsung Buds 2 Pro True Wireless Bluetooth Earbuds',
+  };
+  
+  const pickPhysicalImage = (raffle: PhysicalRaffle) =>
+    PHYSICAL_IMAGES[raffle.id] ?? sambuds;
+  
+  const physicalTitle = (raffle: PhysicalRaffle) =>
+    PHYSICAL_TITLES[raffle.id] ?? 'Physical prize';
+  
+
 
 const upcomingGames = [
   { name: "Dice", date: "xx/xx/xx", image: "/dice.jpg" },
