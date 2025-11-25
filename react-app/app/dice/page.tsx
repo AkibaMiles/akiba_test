@@ -35,7 +35,6 @@ export default function DicePage() {
     joinDice,
     getDiceTierStats,
     getDicePlayerStats,
-    getLastResolvedRoundForPlayer,
   } = useWeb3();
 
   const [selectedTier, setSelectedTier] = useState<DiceTier>(10);
@@ -44,11 +43,6 @@ export default function DicePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
-
-  // Last resolved round YOU participated in
-  const [lastRound, setLastRound] = useState<DiceRoundView | null>(null);
-  const [shownResultRoundId, setShownResultRoundId] =
-    useState<bigint | null>(null);
 
   // modal / animation
   const [isRolling, setIsRolling] = useState(false);
@@ -63,6 +57,9 @@ export default function DicePage() {
   const [playerStats, setPlayerStats] = useState<PlayerStats>(null);
   const [statsOpen, setStatsOpen] = useState(false);
 
+  // backend triggers (draw guard)
+  const [drawingRoundId, setDrawingRoundId] = useState<bigint | null>(null);
+
   /* ────────────────────────────────────────────────────────────── */
   /* Derived state                                                 */
   /* ────────────────────────────────────────────────────────────── */
@@ -72,42 +69,21 @@ export default function DicePage() {
     return tier * 6;
   }, [round, selectedTier]);
 
-  // "My number" in the *current* active round
-  const myNumber: number | null = useMemo(() => {
-    if (!round || !address) return null;
-    const slot = round.slots.find(
-      (s) =>
-        s.player &&
-        s.player.toLowerCase() ===
-          (address as `0x${string}`).toLowerCase()
-    );
-    return slot ? slot.number : null;
-  }, [round, address]);
-
-  const hasWinner = !!round?.winner && !!round?.winningNumber;
+  const hasWinner = !!round?.winner;
   const logicalState: DiceRoundStateName = round?.state ?? "none";
   const isFinished = hasWinner;
 
-  const hasJoinedInCurrent = myNumber != null;
-  const hasJoinedActive = hasJoinedInCurrent && !isFinished;
-  const hasJoinedLastResolved =
-    !!lastRound && lastRound.myNumber != null;
+  const myNumber = round?.myNumber ?? null;
+  const hasJoinedInRound = myNumber != null;
+  const hasJoinedActive = hasJoinedInRound && !isFinished;
+  const hasJoinedLastResolved = hasJoinedInRound && isFinished;
 
   const displayState: DiceRoundStateName = isFinished
     ? "resolved"
     : logicalState;
 
-  const canJoin =
-    !!address &&
-    !!selectedNumber &&
-    !isJoining &&
-    (!round || isFinished || round.filledSlots < 6);
-
-  const modalSelectedNumber =
-    lastRound?.myNumber ?? myNumber ?? null;
-
   /* ────────────────────────────────────────────────────────────── */
-  /* Load active round + stats                                     */
+  /* Load round + stats                                            */
   /* ────────────────────────────────────────────────────────────── */
 
   const loadRound = useCallback(
@@ -117,19 +93,9 @@ export default function DicePage() {
         const view = (await fetchDiceRound(tier)) as DiceRoundView;
         setRound(view);
 
-        // If I'm in this round and it’s not resolved, keep my number selected
-        if (address) {
-          const mySlot = view.slots.find(
-            (s) =>
-              s.player &&
-              s.player.toLowerCase() ===
-                (address as `0x${string}`).toLowerCase()
-          );
-          if (mySlot && !view.winner) {
-            setSelectedNumber(mySlot.number);
-          } else {
-            setSelectedNumber(null);
-          }
+        // If I already joined this round and it’s not resolved, keep my number selected.
+        if (view.myNumber != null && !view.winner) {
+          setSelectedNumber(view.myNumber);
         } else {
           setSelectedNumber(null);
         }
@@ -159,7 +125,7 @@ export default function DicePage() {
     loadRound(selectedTier);
   }, [selectedTier, loadRound]);
 
-  // Poll active round every 15s
+  // Poll every 15s so state stays fresh
   useEffect(() => {
     const id = setInterval(() => {
       loadRound(selectedTier);
@@ -168,92 +134,109 @@ export default function DicePage() {
   }, [selectedTier, loadRound]);
 
   /* ────────────────────────────────────────────────────────────── */
-  /* Load last resolved round YOU joined                           */
+  /* Backend triggers: draw + modal                                */
   /* ────────────────────────────────────────────────────────────── */
 
+  // When:
+  //  - pot is full
+  //  - randomness has been requested (randomBlock != 0)
+  //  - winner not set yet
+  //  - *and* I am in this round
+  // we call /api/dice/draw, show the modal in “rolling” state,
+  // then show the winning number once the round is resolved.
   useEffect(() => {
-    if (!address) {
-      setLastRound(null);
-      return;
-    }
+    if (!round) return;
 
-    let cancelled = false;
+    const isFull = round.filledSlots === 6;
+    const noWinner = !round.winner;
+    const hasRandom = round.randomBlock !== 0n;
+    const iAmInRound = round.myNumber != null;
 
-    const run = async () => {
-      try {
-        const view = await getLastResolvedRoundForPlayer(selectedTier);
-        if (!cancelled) {
-          setLastRound(view);
-        }
-      } catch (e) {
-        console.warn("getLastResolvedRoundForPlayer error", e);
-      }
-    };
+    if (!isFull || !noWinner || !hasRandom || !iAmInRound) return;
+    if (drawingRoundId === round.roundId) return;
 
-    run();
-    const id = setInterval(run, 15000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [address, selectedTier, getLastResolvedRoundForPlayer]);
+    setDrawingRoundId(round.roundId);
 
-  /* ────────────────────────────────────────────────────────────── */
-  /* Show result modal for last resolved round you joined          */
-  /* ────────────────────────────────────────────────────────────── */
-
-  useEffect(() => {
-    if (!lastRound || !address) return;
-
-    const { winner, winningNumber, myNumber: myNum, roundId } =
-      lastRound;
-
-    if (!winner || !winningNumber || !myNum) return;
-
-    // Don’t re-show same round
-    if (shownResultRoundId === roundId) return;
-
-    setShownResultRoundId(roundId);
     setShowResultModal(true);
-    setIsRolling(false);
-    setDiceResult(winningNumber);
+    setIsRolling(true);
+    setDiceResult(null);
     setLastResultMessage(null);
 
-    const iWon =
-      winner.toLowerCase() ===
-      (address as `0x${string}`).toLowerCase();
+    (async () => {
+      try {
+        await fetch("/api/dice/draw", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ roundId: round.roundId.toString() }),
+        });
 
-    if (!iWon) {
-      setLastResultMessage(
-        `Winning number was ${winningNumber}. Better luck next time.`
-      );
-    } else {
-      setLastResultMessage(null); // winner copy handled in modal
-    }
-  }, [lastRound, address, shownResultRoundId]);
+        const updated = await loadRound(selectedTier);
+        if (!updated) return;
+
+        const winning = updated.winningNumber ?? null;
+        if (!winning) {
+          setLastResultMessage(
+            "Draw transaction sent. Waiting for the result…"
+          );
+          return;
+        }
+
+        setDiceResult(winning);
+
+        const myNum = updated.myNumber;
+        if (myNum && myNum !== winning) {
+          setLastResultMessage(
+            `Winning number was ${winning}. Better luck next time.`
+          );
+        }
+      } catch (e) {
+        console.error("draw API failed:", e);
+        setLastResultMessage(
+          "Something went wrong while drawing this pot. Please refresh."
+        );
+      } finally {
+        setIsRolling(false);
+      }
+    })();
+  }, [round, drawingRoundId, selectedTier, loadRound]);
 
   /* ────────────────────────────────────────────────────────────── */
   /* Handlers                                                      */
   /* ────────────────────────────────────────────────────────────── */
 
   function handleSelectNumber(n: number) {
-    if (isJoining) return;
-    if (hasJoinedActive) return;
+    // If no round yet (no active pot) or round is resolved, just allow picking
+    if (!round || round.winner) {
+      setSelectedNumber(n);
+      return;
+    }
 
-    // Don’t allow clicking a slot already owned by someone else
-    if (round) {
-      const slot = round.slots.find((s) => s.number === n);
-      if (
-        slot?.player &&
-        (!address ||
-          slot.player.toLowerCase() !== address.toLowerCase())
-      ) {
-        return;
-      }
+    // If I've already joined this round, don't allow changing
+    if (round.myNumber != null) return;
+
+    const slot = round.slots.find((s) => s.number === n);
+    if (!slot) return;
+
+    // If slot is taken by someone else, ignore
+    if (
+      slot.player &&
+      address &&
+      slot.player.toLowerCase() !== address.toLowerCase()
+    ) {
+      return;
     }
 
     setSelectedNumber(n);
   }
+
+  const isFinishedOrNoRound = !round || isFinished;
+
+  const canJoin =
+    !!address &&
+    !!selectedNumber &&
+    !isJoining &&
+    // if finished, new pot will be opened on-chain on next join
+    (isFinishedOrNoRound || round.filledSlots < 6);
 
   async function handleJoin() {
     if (!selectedNumber || !canJoin) return;
@@ -262,15 +245,44 @@ export default function DicePage() {
     try {
       setIsJoining(true);
 
-      // 1) Join on-chain
+      // 1) Send tx
       await joinDice(selectedTier, selectedNumber);
 
-      // 2) Refresh round + stats
-      await loadRound(selectedTier);
+      // 2) Refresh round view
+      const updated = (await fetchDiceRound(
+        selectedTier
+      )) as DiceRoundView;
+      setRound(updated);
+      setSelectedNumber(updated.myNumber ?? selectedNumber);
 
-      // 3) Randomness request is handled via backend / relayer
-      //    (we already have requestRoundRandomness in the contract)
-      //    so FE doesn't need to orchestrate anything here.
+      // 3) If this is the FIRST player, request randomness early.
+      //    (filledSlots == 1 and no randomBlock yet)
+      if (
+        updated.filledSlots === 1 &&
+        updated.randomBlock === 0n &&
+        !updated.winner
+      ) {
+        try {
+          await fetch("/api/dice/randomness", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              roundId: updated.roundId.toString(),
+              tier: selectedTier,
+            }),
+          });
+        } catch (e) {
+          console.error("request randomness failed", e);
+        }
+      }
+
+      // 4) Refresh stats async (don’t block UX)
+      getDiceTierStats(selectedTier)
+        .then(setTierStats)
+        .catch(console.error);
+      getDicePlayerStats()
+        .then(setPlayerStats)
+        .catch(console.error);
     } catch (e) {
       console.error(e);
     } finally {
@@ -294,7 +306,10 @@ export default function DicePage() {
           selectedTier={selectedTier}
           onTierChange={(tier) => {
             setSelectedTier(tier);
-            setShownResultRoundId(null);
+            setDrawingRoundId(null);
+            setShowResultModal(false);
+            setDiceResult(null);
+            setLastResultMessage(null);
           }}
           tierStats={tierStats}
           playerStats={playerStats}
@@ -319,14 +334,14 @@ export default function DicePage() {
         />
       </div>
 
-      {/* Result modal – for the last round YOU joined (winner + losers) */}
+      {/* Result modal – opened when we’re drawing & you are in the round */}
       <ResultModal
-        open={showResultModal}
+        open={showResultModal && hasJoinedInRound}
         onClose={() => setShowResultModal(false)}
         diceResult={diceResult}
         isRolling={isRolling}
         lastResultMessage={lastResultMessage}
-        selectedNumber={modalSelectedNumber}
+        selectedNumber={myNumber}
         potSize={potSize}
       />
 
