@@ -1,3 +1,4 @@
+// src/app/earn/page.tsx
 "use client";
 
 import Image from "next/image";
@@ -13,6 +14,83 @@ import { BadgesSection } from "@/components/BadgesSection";
 import { akibaMilesSymbol, RefreshSvg } from "@/lib/svg";
 import dynamic from "next/dynamic";
 
+// Passport helper
+import { fetchSuperAccountForOwner } from "@/lib/prosperity-pass";
+
+// Badge metadata only
+import {
+  BADGES,
+  type BadgeProgress,
+  type BadgeKey,
+  EMPTY_BADGE_PROGRESS,
+} from "@/lib/prosperityBadges";
+
+/* ──────────────────────────────────────────────────────────────── */
+/*  Badge backend types                                            */
+/* ──────────────────────────────────────────────────────────────── */
+
+type TierMetadata = {
+  badgeId: number;
+  level: number;
+  minValue: number;
+  points: number;
+};
+
+type BackendBadgeTier = {
+  points: string;
+  tier: string;
+  uri: string;
+  metadata: TierMetadata;
+};
+
+type BackendBadge = {
+  badgeId: string;
+  badgeTiers: BackendBadgeTier[];
+  uri: string;
+  metadata: {
+    name: string;
+    description: string;
+    platform: string;
+    chains: string[];
+    condition: string;
+    image: string;
+    "stack-image": string;
+    season: number | null;
+  };
+  points: number;
+  tier: number;
+  claimableTier: number | null;
+  claimable: boolean;
+};
+
+type BackendBadgesResponse = {
+  currentBadges: BackendBadge[];
+};
+
+/* Map local keys → Prosperity badge IDs */
+const BADGE_ID_BY_KEY: Record<BadgeKey, number | null> = {
+  "cel2-transactions": 18,
+  "s1-transactions": 22,
+  "lam-lifetime-akiba": 27,
+  "amg-akiba-games": null, // not wired yet
+};
+
+function deriveProgressFromBackendBadge(badge: BackendBadge): number {
+  const rawTier =
+    typeof badge.tier === "number" && !Number.isNaN(badge.tier)
+      ? badge.tier
+      : 0;
+
+  const maxSteps =
+    Array.isArray(badge.badgeTiers) && badge.badgeTiers.length > 0
+      ? badge.badgeTiers.length
+      : 5;
+
+  const steps = Math.max(0, Math.min(rawTier, maxSteps));
+
+  return steps;
+}
+
 const BadgeClaimSuccessSheet = dynamic(
   () =>
     import("@/components/BadgeClaimSuccessSheet").then(
@@ -27,11 +105,22 @@ export default function EarnPage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [quest, setQuest] = useState<any>(null);
   const [success, setSuccess] = useState(false);
+
+  // Badges state
   const [isRefreshingBadges, setIsRefreshingBadges] = useState(false);
   const [unlockedBadges, setUnlockedBadges] = useState<string[]>([]);
   const [badgeSheetOpen, setBadgeSheetOpen] = useState(false);
+  const [badgeProgress, setBadgeProgress] = useState<
+    BadgeProgress | undefined
+  >(undefined);
+  const [hasClaimableBadges, setHasClaimableBadges] = useState(false);
+  const [hasPassport, setHasPassport] = useState(false);
+
   /* wallet + balance */
-  useEffect(() => { getUserAddress(); }, [getUserAddress]);
+  useEffect(() => {
+    getUserAddress();
+  }, [getUserAddress]);
+
   useEffect(() => {
     if (!address) return;
     (async () => {
@@ -40,15 +129,220 @@ export default function EarnPage() {
     })();
   }, [address, getakibaMilesBalance]);
 
-  const openQuest = (q: any) => { setQuest(q); setSheetOpen(true); };
+  /* Check Prosperity Pass (Super Account) */
+  useEffect(() => {
+    if (!address) {
+      setHasPassport(false);
+      return;
+    }
+
+    const checkPassport = async () => {
+      try {
+        const result = await fetchSuperAccountForOwner(address);
+        setHasPassport(result.hasPassport);
+      } catch {
+        setHasPassport(false);
+      }
+    };
+
+    void checkPassport();
+  }, [address]);
+
+  /* ───────── Badge refresh helper (mirrors Home) ───────── */
+  const refreshBadges = async (owner: `0x${string}`) => {
+    try {
+      const result: any = await fetchSuperAccountForOwner(owner);
+
+      const safe =
+        result?.hasPassport && result?.account?.smartAccount
+          ? (result.account.smartAccount as `0x${string}`)
+          : null;
+
+      if (!safe) {
+        setBadgeProgress({ ...EMPTY_BADGE_PROGRESS });
+        setUnlockedBadges([]);
+        setHasClaimableBadges(false);
+        return;
+      }
+
+      const base = process.env.NEXT_PUBLIC_BADGES_API_BASE ?? "";
+      const url = `${base}/api/user/${safe}`;
+
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { accept: "application/json" },
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        setBadgeProgress({ ...EMPTY_BADGE_PROGRESS });
+        setUnlockedBadges([]);
+        setHasClaimableBadges(false);
+        return;
+      }
+
+      const data: BackendBadgesResponse = await res.json();
+      const backendBadges = data.currentBadges ?? [];
+
+      // Build step-based progress
+      const latest: BadgeProgress = { ...EMPTY_BADGE_PROGRESS };
+
+      (Object.keys(latest) as BadgeKey[]).forEach((key) => {
+        const badgeId = BADGE_ID_BY_KEY[key];
+
+        if (badgeId == null) {
+          latest[key] = 0;
+          return;
+        }
+
+        const backendBadge = backendBadges.find(
+          (b) => Number(b.badgeId) === badgeId
+        );
+
+        if (!backendBadge) {
+          latest[key] = 0;
+          return;
+        }
+
+        const value = deriveProgressFromBackendBadge(backendBadge);
+        latest[key] = value;
+      });
+
+      setBadgeProgress(latest);
+
+      // Detect if any tracked IDs are actually claimable
+      const trackedIds = new Set(
+        Object.values(BADGE_ID_BY_KEY).filter(
+          (id): id is number => id != null
+        )
+      );
+
+      const claimableExists = backendBadges.some((b) => {
+        const idNum = Number(b.badgeId);
+        const claimableTier = b.claimableTier ?? 0;
+        const currentTier = b.tier ?? 0;
+
+        return (
+          trackedIds.has(idNum) &&
+          b.claimable === true &&
+          claimableTier > currentTier
+        );
+      });
+
+      setHasClaimableBadges(claimableExists);
+    } catch {
+      setBadgeProgress({ ...EMPTY_BADGE_PROGRESS });
+      setUnlockedBadges([]);
+      setHasClaimableBadges(false);
+    }
+  };
+
+  /* Claim badges and derive unlocked labels (mirrors Home) */
+  async function claimProsperityBadgesForOwner(
+    owner: `0x${string}`
+  ): Promise<string[]> {
+    try {
+      const result: any = await fetchSuperAccountForOwner(owner);
+
+      const safe =
+        result?.hasPassport && result?.account?.smartAccount
+          ? (result.account.smartAccount as `0x${string}`)
+          : null;
+
+      if (!safe) {
+        return [];
+      }
+
+      const base = process.env.NEXT_PUBLIC_BADGES_API_BASE ?? "";
+      const url = `${base}/api/user/${safe}`;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          accept: "application/json, text/plain, */*",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        // non-JSON / empty body
+      }
+
+      if (!res.ok) {
+        return [];
+      }
+
+      const msg =
+        typeof data?.message === "string" ? data.message.toLowerCase() : "";
+      if (msg === "error" || msg === "unauthorized") {
+        return [];
+      }
+
+      const updates: any[] = Array.isArray(data?.badgeUpdates)
+        ? data.badgeUpdates
+        : [];
+
+      const newlyUnlocked: string[] = [];
+
+      updates.forEach((u) => {
+        const idNum = Number(u.badgeId);
+        const newLevel = Number(u.level ?? 0);
+        const prevLevel = Number(u.previousLevel ?? 0);
+
+        if (!Number.isFinite(idNum) || !Number.isFinite(newLevel)) return;
+
+        const key = (Object.keys(BADGE_ID_BY_KEY) as BadgeKey[]).find(
+          (k) => BADGE_ID_BY_KEY[k] === idNum
+        );
+        if (!key) return;
+
+        const def = BADGES.find((bd) => bd.key === key);
+        if (!def) return;
+
+        for (
+          let lvl = prevLevel + 1;
+          lvl <= newLevel && lvl <= def.tiers.length;
+          lvl++
+        ) {
+          const tierDef = def.tiers[lvl - 1];
+          newlyUnlocked.push(`${def.title} • ${tierDef.label}`);
+        }
+      });
+
+      return newlyUnlocked;
+    } catch {
+      return [];
+    }
+  }
+
+  /* Auto-fetch badges once we know address + hasPassport (mirrors Home) */
+  useEffect(() => {
+    if (!address || !hasPassport) {
+      return;
+    }
+
+    void refreshBadges(address as `0x${string}`);
+  }, [address, hasPassport]);
+
+  const openQuest = (q: any) => {
+    setQuest(q);
+    setSheetOpen(true);
+  };
 
   return (
     <main className="pb-24 font-sterling">
       <div className="px-4 flex flex-col justify-around gap-1 mb-4">
         <h1 className="text-2xl font-medium">Earn</h1>
-        <p className="font-poppins">Complete challenges to earn AkibaMiles.</p>
+        <p className="font-poppins">
+          Complete challenges to earn AkibaMiles.
+        </p>
       </div>
       <MiniPointsCard points={Number(balance)} />
+
       {/* ── Page-level Active / Completed tabs ───────────── */}
       <Tabs defaultValue="active" className="mx-4">
         <TabsList>
@@ -74,84 +368,105 @@ export default function EarnPage() {
 
         {/* ── ACTIVE tab ─────────────────────────── */}
         <TabsContent value="active">
-          {/* Daily (active only) */}
-          <div className=" mt-6 gap-1">
-          <h3 className="text-lg font-medium mt-6 mb-2">Daily challenges</h3>
-        <p className="text-gray-500">Completed a challenge? Click & claim Miles</p>
-        </div>
+          <div className="mt-6 gap-1">
+            <h3 className="text-lg font-medium mt-6 mb-2">
+              Daily challenges
+            </h3>
+            <p className="text-gray-500">
+              Completed a challenge? Click & claim Miles
+            </p>
+          </div>
           <DailyChallenges />
-
-
           <PartnerQuests openPopup={openQuest} />
         </TabsContent>
 
         {/* ── COMPLETED tab ──────────────────────── */}
         <TabsContent value="completed">
-          <h3 className="text-lg font-medium mt-6 mb-2">Completed today</h3>
-          {/* reuse DailyChallenges with flag */}
+          <h3 className="text-lg font-medium mt-6 mb-2">
+            Completed today
+          </h3>
           <DailyChallenges showCompleted />
-
-          {/* partner quests don’t yet track completion —
-              if/when you store partner_engagements, you can
-              add a PartnerQuestsCompleted component here */}
         </TabsContent>
       </Tabs>
-            {/* Pass Badges */}
-            <div className="mx-4 mt-6">
-      <div className="flex justify-between items-center my-2">
-  <h3 className="text-lg font-medium">Pass Badges</h3>
 
-  <button
-  type="button"
-  className="flex items-center"
-  onClick={async () => {
-    if (isRefreshingBadges) return; // prevent double-click spam
-    setIsRefreshingBadges(true);
+      {/* Pass Badges – only if user HAS Prosperity Pass, same as Home */}
+      {hasPassport && (
+        <div className="mx-4 mt-6">
+          <div className="flex justify-between items-center my-2">
+            <h3 className="text-lg font-medium">Pass Badges</h3>
 
-    // TODO: replace with real logic to fetch / compute unlocked badges
-    setUnlockedBadges([
-      "S1 Transactions • Tier 1",
-      "S1 Transactions • Tier 2",
-      "S1 Transactions • Tier 3",
-    ]);
+            <button
+              type="button"
+              className="flex items-center"
+              onClick={async () => {
+                if (!address || !hasPassport) {
+                  return;
+                }
 
-    setBadgeSheetOpen(true);
-    // 👇 don't reset here; it's handled in onOpenChange when user closes sheet
-  }}
->
-  <span className="text-sm text-[#238D9D] hover:underline font-medium">
-    Claim Badges
-  </span>
-  <Image
-    src={RefreshSvg}
-    alt="Refresh Icon"
-    width={24}
-    height={24}
-    className={`w-6 h-6 ml-1 ${
-      isRefreshingBadges ? "animate-spin" : ""
-    }`}
-  />
-</button>
+                if (isRefreshingBadges) {
+                  return;
+                }
 
-</div>
+                setIsRefreshingBadges(true);
 
+                try {
+                  const owner = address as `0x${string}`;
 
+                  // If no claimable badges, treat as a pure "Refresh"
+                  if (!hasClaimableBadges) {
+                    await refreshBadges(owner);
+                    return;
+                  }
 
-        {/* Active badges */}
-        <BadgesSection />
-      </div>
+                  // Try to claim and get the newly unlocked tiers
+                  const unlocked = await claimProsperityBadgesForOwner(owner);
 
-            {/* Sheets */}
-            <BadgeClaimSuccessSheet
-  open={badgeSheetOpen}
-  onOpenChange={(open: boolean | ((prevState: boolean) => boolean)) => {
-    setBadgeSheetOpen(open);
-    if (!open) setIsRefreshingBadges(false);
-  }}
-  unlocked={unlockedBadges}
-/>
+                  if (unlocked.length === 0) {
+                    await refreshBadges(owner);
+                    return;
+                  }
 
-      {/* sheets / modals */}
+                  setUnlockedBadges(unlocked);
+                  await refreshBadges(owner);
+                  setBadgeSheetOpen(true);
+                } catch {
+                  // swallow
+                } finally {
+                  setIsRefreshingBadges(false);
+                }
+              }}
+            >
+              <span className="text-sm text-[#238D9D] hover:underline font-medium">
+                {hasClaimableBadges ? "Claim Badges" : "Refresh Badges"}
+              </span>
+              <Image
+                src={RefreshSvg}
+                alt="Refresh Icon"
+                width={24}
+                height={24}
+                className={`w-6 h-6 ml-1 ${
+                  isRefreshingBadges ? "animate-spin" : ""
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Active badges */}
+          <BadgesSection progress={badgeProgress} />
+        </div>
+      )}
+
+      {/* Badge claim success sheet */}
+      <BadgeClaimSuccessSheet
+        open={badgeSheetOpen}
+        onOpenChange={(open) => {
+          setBadgeSheetOpen(open);
+          if (!open) setIsRefreshingBadges(false);
+        }}
+        unlocked={unlockedBadges}
+      />
+
+      {/* Partner quest sheets / modals */}
       <EarnPartnerQuestSheet
         open={sheetOpen}
         onOpenChange={setSheetOpen}
