@@ -11,8 +11,6 @@ akiba
 # next.js
 /.next/
 /out/
-.env
-
 
 # production
 /build

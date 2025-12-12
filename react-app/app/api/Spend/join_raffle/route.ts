@@ -4,7 +4,7 @@ import { createPublicClient, http, type Abi } from "viem"
 import { celo } from "viem/chains"
 import raffleAbi from "@/contexts/miniraffle.json"
 
-const RAFFLE_ADDRESS = "0xd75dfa972c6136f1c594fec1945302f885e1ab29"
+const RAFFLE_ADDRESS = "0xD75dfa972C6136f1c594Fec1945302f885E1ab29"
 
 const publicClient = createPublicClient({
   chain: celo,

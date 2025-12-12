@@ -341,7 +341,7 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
                 </h3>
                 <div className="flex w-full items-center gap-2">
                   <h3 className="text-lg font-medium">{raffle.title}</h3>
-                  <h3 className="ml-auto text-sm text-[#238D9D]">by CeloPG ›</h3>
+                  <h3 className="ml-auto text-sm text-[#238D9D]">by Minipay ›</h3>
                 </div>
               </div>
 

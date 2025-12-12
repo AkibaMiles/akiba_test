@@ -1,12 +1,25 @@
-import { Cash, Celo, Door, GloDollar,SYR, Mento, akibaMilesSymbol, akibaMilesSymbolAlt, MiniPay, W3MLogo  } from "@/lib/svg";
-import { Check, Lock } from "@phosphor-icons/react";
-import Image from "next/image";
-import Link from "next/link";
-import cn from 'clsx'
-import { createClient } from "@supabase/supabase-js";
-import { useQuery } from "@tanstack/react-query";
-import { useWeb3 } from "@/contexts/useWeb3";
-// components/DailyChallenges.tsx
+'use client';
+
+import {
+  Cash,
+  Celo,
+  Door,
+  GloDollar,
+  SYR,
+  Mento,
+  akibaMilesSymbol,
+  akibaMilesSymbolAlt,
+  MiniPay,
+  W3MLogo,
+} from '@/lib/svg';
+import { Check, Lock } from '@phosphor-icons/react';
+import Image from 'next/image';
+import cn from 'clsx';
+import { createClient } from '@supabase/supabase-js';
+import { useQuery } from '@tanstack/react-query';
+import { useWeb3 } from '@/contexts/useWeb3';
+import { useMemo } from 'react';
+
 export interface Quest {
   id: string;
   img: any;
@@ -19,91 +32,92 @@ export interface Quest {
   isLocked: boolean;
 }
 
+/* ─── Akiba quest IDs (3-step flow) ──────────────────────── */
+const FOLLOW_ID = '99da9e3d-5332-419e-aa40-5cb9d6e3a7ab'; // Follow Twitter
+const TELEGRAM_ID = '2679ab21-f8cf-446f-8efb-36b549f73fa0'; // Join Telegram
+const USERNAME_ID = 'f18818cf-eec4-412e-8311-22e09a1332db'; // Set username
+
 const quests: Quest[] = [
   {
-    id: '99da9e3d-5332-419e-aa40-5cb9d6e3a7ab',
+    id: FOLLOW_ID,
     isLocked: false,
     img: akibaMilesSymbolAlt,
-    title: "akibaMiles",
-    description: "Follow Us on Twitter",
-    reward: "20 akibaMiles",
-    color: "#238D9D",
-    actionLink: "https://twitter.com/akibamiles",
+    title: 'akibaMiles',
+    description: 'Follow Us on Twitter',
+    reward: '20 akibaMiles',
+    color: '#238D9D1A',
+    actionLink: 'https://twitter.com/akibamiles',
     instructions: [
-      { title: "Open Twitter", text: "Go to our @akibaMilesApp page." },
-      { title: "Follow", text: "Hit the Follow button and confirm." },
+      { title: 'Open Twitter', text: 'Go to our @akibaMilesApp page.' },
+      { title: 'Follow', text: 'Hit the Follow button and confirm.' },
     ],
   },
-  // {
-  //   id: '5cb7f990-1db6-4c99-8236-804b78dadb63',
-  //   isLocked: false,
-  //   img: W3MLogo,
-  //   title: "Web3 Mashinani",
-  //   description: "Follow Us on Twitter",
-  //   reward: "20 akibaMiles",
-  //   color: "#f7f5f2",
-  //   actionLink: "https://twitter.com/web3mashinani",
-  //   instructions: [
-  //     { title: "Open Twitter", text: "Go to our @web3mashinani page." },
-  //     { title: "Follow", text: "Hit the Follow button and confirm." },
-  //   ],
-  // },
   {
-    id: 'd41e652b-8aa3-469c-9957-b7d6b6b6e182',
+    id: '1b15ef82-3a72-45c9-979a-2dbf317e8b26',
     isLocked: false,
-    img: SYR,
-    title: "SuperYLDR",
-    description: "Follow SuperYield-R on Twitter",
-    reward: "20 akibaMiles",
-    color: "#c1f5f5",
-    actionLink: "https://x.com/superyldr",     // <-- where the button should go
+    img: MiniPay,
+    title: 'MiniPay',
+    description: 'Subscribe to the Minipay Youtube Channel',
+    reward: '25 akibaMiles',
+    color: '#B3DEC5',
+    actionLink: 'https://www.youtube.com/@MiniPay_wallet',
     instructions: [
-      { title: "Open Twitter", text: "Go to our @superYLDR page." },
-      { title: "Follow", text: "Hit the Follow button and confirm." },
+      { title: 'Open Youtube', text: 'Go to the Minipay Youtube Channel.' },
+      { title: 'Subscribe', text: 'Hit the subscribe button and confirm.' },
     ],
   },
-
+  {
+    id: TELEGRAM_ID,
+    isLocked: false,
+    img: akibaMilesSymbolAlt,
+    title: 'AkibaMiles',
+    description: 'Join the Telegram Group',
+    reward: '20 akibaMiles',
+    color: '#238D9D1A',
+    actionLink: 'https://t.me/+kAqhzNJmBCZmYTZk',
+    instructions: [
+      { title: 'Open Telegram', text: 'Open the Telegram App' },
+      { title: 'Join Group', text: 'Hit the Join Group button' },
+    ],
+  },
+  // 👇 username quest – part of the same Akiba slot (3rd step)
+  {
+    id: USERNAME_ID,
+    isLocked: false,
+    img: akibaMilesSymbolAlt,
+    title: 'AkibaMiles',
+    description: 'Set your Akiba username',
+    reward: '10 akibaMiles',
+    color: '#238D9D1A',
+    actionLink: '', // handled inside sheet – no external link
+    instructions: [], // we ignore instructions for this one in the sheet
+  },
   {
     id: '8d5a7766-4d2a-4bff-ac97-6b03fd5b570f',
     isLocked: true,
     img: Celo,
-    title: "Celo",
-    description: "Stake more than 5 Celo through Mondo.celo.org",
-    reward: "15 akibaMiles",
-    color: "#FFFFD6",
-    actionLink: "https://mondo.celo.org",     // <-- where the button should go
+    title: 'Celo',
+    description: 'Stake more than 5 Celo through Mondo.celo.org',
+    reward: '15 akibaMiles',
+    color: '#FFFFD6',
+    actionLink: 'https://mondo.celo.org',
     instructions: [
-      { title: "Connect Wallet", text: "Open your wallet and select Celo network." },
-      { title: "Stake", text: "Go to Mondo.celo.org and stake ≥ 5 CELO." },
+      { title: 'Connect Wallet', text: 'Open your wallet and select Celo network.' },
+      { title: 'Stake', text: 'Go to Mondo.celo.org and stake ≥ 5 CELO.' },
     ],
   },
-
-  // {
-  //   id: '8d8ae13c-a4b0-47fa-aa30-4fdfc6d3032e',
-  //   isLocked: true,
-  //   img: GloDollar,
-  //   title: "GloDollar",
-  //   description: "Use Pretium to Offramp or make a local payment",
-  //   reward: "15 akibaMiles",
-  //   color: "#24E5E033",
-  //   actionLink: "https://twitter.com/pretium",
-  //   instructions: [
-  //     { title: "Open Pretium", text: "Open Pretium in your Minipay Mini Apps" },
-  //     { title: "Offramp", text: "Buy Airtime, or make a local payment" },
-  //   ],
-  // },
   {
     id: 'a487d06b-fe99-4f4f-91bb-532f1647a86c',
     img: Mento,
     isLocked: true,
-    title: "Mento",
-    description: "Swap Between Celo and a Stablecoin",
-    reward: "15 akibaMiles",
-    color: "#238D9D1A",
-    actionLink: "https://app.mento.org/",
+    title: 'Mento',
+    description: 'Swap Between Celo and a Stablecoin',
+    reward: '15 akibaMiles',
+    color: '#238D9D1A',
+    actionLink: 'https://app.mento.org/',
     instructions: [
-      { title: "Open Mento", text: "Go to our @akibaMilesApp page." },
-      { title: "Swap", text: "Swap some Celo for any Stablecoin" },
+      { title: 'Open Mento', text: 'Go to the Mento app.' },
+      { title: 'Swap', text: 'Swap some Celo for any Stablecoin.' },
     ],
   },
 ];
@@ -118,39 +132,74 @@ function useClaimedQuestIds(address?: string) {
     enabled: !!address,
     queryKey: ['partner-claimed', address],
     queryFn: async () => {
-      if (!address) return []
+      if (!address) return [];
       const { data } = await supabase
         .from('partner_engagements')
         .select('partner_quest_id')
-        .eq('user_address', address)
-      return data?.map((d) => d.partner_quest_id) ?? []
+        .eq('user_address', address);
+      return data?.map((d) => d.partner_quest_id) ?? [];
     },
-  })
+  });
 }
 
 export default function PartnerQuests({
   openPopup,
 }: {
-  openPopup: (q: Quest) => void
+  openPopup: (q: Quest) => void;
 }) {
-  const { address } = useWeb3()
-  const { data: claimedIds = [] } = useClaimedQuestIds(address!)
-  const claimedSet = new Set(claimedIds)
+  const { address } = useWeb3();
+  const { data: claimedIds = [] } = useClaimedQuestIds(address!);
+  const claimedSet = new Set(claimedIds);
+
+  const displayQuests = useMemo(() => {
+    const list = [...quests];
+
+    // All Akiba stage IDs in order
+    const akibaIds = [FOLLOW_ID, TELEGRAM_ID, USERNAME_ID];
+
+    // Find the index of the FIRST Akiba card in the list – this slot will be reused
+    const baseIdx = list.findIndex((q) => akibaIds.includes(q.id));
+    if (baseIdx === -1) return list; // safeguard
+
+    // Decide which Akiba quest to show in that slot:
+    // - if Follow not done → show Follow
+    // - else if Telegram not done → show Telegram
+    // - else → show Username (even if completed, so it can show "Completed")
+    let currentAkibaId: string;
+    if (!claimedSet.has(FOLLOW_ID)) {
+      currentAkibaId = FOLLOW_ID;
+    } else if (!claimedSet.has(TELEGRAM_ID)) {
+      currentAkibaId = TELEGRAM_ID;
+    } else {
+      currentAkibaId = USERNAME_ID;
+    }
+
+    const currentAkibaQuest = quests.find((q) => q.id === currentAkibaId);
+    if (!currentAkibaQuest) return list;
+
+    // Put the chosen Akiba quest in the base slot
+    list[baseIdx] = currentAkibaQuest;
+
+    // Remove the other Akiba quests from the rest of the list so we only get one card
+    return list.filter((q, idx) => {
+      if (idx === baseIdx) return true;
+      return !akibaIds.includes(q.id);
+    });
+  }, [claimedSet]);
 
   return (
     <div className="mt-6">
       <h3 className="text-lg font-medium mb-3">Partner Quests</h3>
 
       <div className="grid grid-cols-2 gap-2">
-        {quests.map((q) => {
-          const locked     = q.isLocked
-          let completed
-          if(!locked){
-           completed  = claimedSet.has(q.id)
+        {displayQuests.map((q: Quest) => {
+          const locked = q.isLocked;
+          let completed: boolean | undefined;
+          if (!locked) {
+            completed = claimedSet.has(q.id);
           }
 
-          /* card click only when active */
-          const clickable = !locked && !completed
+          const clickable = !locked && !completed;
 
           return (
             <div
@@ -163,18 +212,14 @@ export default function PartnerQuests({
                 locked || completed ? 'opacity-80' : '',
               )}
             >
-              {/* inner content (blurred if locked) */}
+              {/* inner content (blurred if locked or completed) */}
               <div
                 className={cn(
                   'flex h-full flex-col items-center justify-around text-center transition',
                   locked || completed ? 'blur-sm' : '',
                 )}
               >
-                <Image
-                  src={q.img}
-                  alt={q.title}
-                  className="h-[64px] w-[64px]"
-                />
+                <Image src={q.img} alt={q.title} className="h-[64px] w-[64px]" />
                 <p className="text-sm font-medium">{q.title}</p>
                 <p className="mt-1 flex items-center justify-center text-xs font-poppins">
                   <Image
@@ -222,9 +267,9 @@ export default function PartnerQuests({
                 </div>
               )}
             </div>
-          )
+          );
         })}
       </div>
     </div>
-  )
+  );
 }
