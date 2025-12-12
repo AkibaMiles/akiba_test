@@ -272,7 +272,7 @@ const BADGE_ID_BY_KEY: Record<BadgeKey, number | null> = {
   "cel2-transactions": 18,
   "s1-transactions": 22,
   "lam-lifetime-akiba": 27,
-  "amg-akiba-games": null, // still local-only
+  "amg-akiba-games": 30, // still local-only
 };
 
 export const EMPTY_BADGE_PROGRESS: BadgeProgress = {

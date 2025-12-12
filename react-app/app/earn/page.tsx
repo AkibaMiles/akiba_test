@@ -72,7 +72,7 @@ const BADGE_ID_BY_KEY: Record<BadgeKey, number | null> = {
   "cel2-transactions": 18,
   "s1-transactions": 22,
   "lam-lifetime-akiba": 27,
-  "amg-akiba-games": null, // not wired yet
+  "amg-akiba-games": 30, // not wired yet
 };
 
 function deriveProgressFromBackendBadge(badge: BackendBadge): number {
