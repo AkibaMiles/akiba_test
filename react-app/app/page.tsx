@@ -292,24 +292,26 @@ export default function Home() {
     loadUsername();
   }, [address]);
 
-  // In Home and Earn
-useEffect(() => {
-  if (!address) {
-    console.log("[PP CHECK] No address, cannot check passport");
-    return;
-  }
-
-  (async () => {
-    try {
-      console.log("[PP CHECK] About to query PP for", address);
-      const result = await fetchSuperAccountForOwner(address);
-      console.log("[PP CHECK] Result for", address, "→", result);
-    } catch (e) {
-      console.error("[PP CHECK] Error for", address, e);
+  useEffect(() => {
+    if (!address) {
+      setHasPassport(false);
+      return;
     }
-  })();
-}, [address]);
-
+  
+    const checkPassport = async () => {
+      try {
+        const result = await fetchSuperAccountForOwner(address);
+        setHasPassport(result.hasPassport);
+        console.log("Passport check result:", result);
+      } catch {
+        setHasPassport(false);
+        console.log("Error checking passport for address:", address);
+      }
+    };
+  
+    void checkPassport();
+  }, [address]);
+  
 
   /* ───────── Raffles ───────── */
   useEffect(() => {
