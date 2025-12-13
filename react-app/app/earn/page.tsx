@@ -98,6 +98,14 @@ const BadgeClaimSuccessSheet = dynamic(
     ),
   { ssr: false }
 );
+const BadgeClaimLoadingSheet = dynamic(
+  () =>
+    import("@/components/BadgeClaimSuccessSheet").then(
+      (m) => m.BadgeClaimLoadingSheet
+    ),
+  { ssr: false }
+);
+
 
 export default function EarnPage() {
   const { address, getUserAddress, getakibaMilesBalance } = useWeb3();
@@ -115,7 +123,7 @@ export default function EarnPage() {
   >(undefined);
   const [hasClaimableBadges, setHasClaimableBadges] = useState(false);
   const [hasPassport, setHasPassport] = useState(false);
-
+  const [badgeClaimLoadingOpen, setBadgeClaimLoadingOpen] = useState(false);
   /* wallet + balance */
   useEffect(() => {
     getUserAddress();
@@ -134,7 +142,7 @@ export default function EarnPage() {
       setHasPassport(false);
       return;
     }
-  
+
     const checkPassport = async () => {
       try {
         const result = await fetchSuperAccountForOwner(address);
@@ -143,10 +151,10 @@ export default function EarnPage() {
         setHasPassport(false);
       }
     };
-  
+
     void checkPassport();
   }, [address]);
-  
+
 
   /* ───────── Badge refresh helper (mirrors Home) ───────── */
   const refreshBadges = async (owner: `0x${string}`) => {
@@ -395,44 +403,55 @@ export default function EarnPage() {
           <div className="flex justify-between items-center my-2">
             <h3 className="text-lg font-medium">Pass Badges</h3>
 
+            <h3 className="text-lg font-medium">Pass Badges</h3>
             <button
               type="button"
               className="flex items-center"
               onClick={async () => {
-                if (!address || !hasPassport) {
+                if (!address || !hasPassport) return;
+                if (isRefreshingBadges) return;
+
+                const owner = address as `0x${string}`;
+
+                // 1) Pure refresh path (no claimable badges)
+                if (!hasClaimableBadges) {
+                  setIsRefreshingBadges(true);
+                  try {
+                    await refreshBadges(owner);
+                  } catch {
+                    // swallow
+                  } finally {
+                    setIsRefreshingBadges(false);
+                  }
                   return;
                 }
 
-                if (isRefreshingBadges) {
-                  return;
-                }
-
+                // 2) Claim path → show loading sheet
                 setIsRefreshingBadges(true);
+                setBadgeClaimLoadingOpen(true);
 
                 try {
-                  const owner = address as `0x${string}`;
-
-                  // If no claimable badges, treat as a pure "Refresh"
-                  if (!hasClaimableBadges) {
-                    await refreshBadges(owner);
-                    return;
-                  }
-
-                  // Try to claim and get the newly unlocked tiers
                   const unlocked = await claimProsperityBadgesForOwner(owner);
 
+                  // If claiming failed or nothing new was unlocked,
+                  // just refresh and don't open the success sheet.
                   if (unlocked.length === 0) {
                     await refreshBadges(owner);
                     return;
                   }
 
                   setUnlockedBadges(unlocked);
+
+                  // Refresh progress bars to reflect new tiers
                   await refreshBadges(owner);
+
+                  // Open success modal
                   setBadgeSheetOpen(true);
                 } catch {
-                  // swallow
+                  // swallow, leave UI in safe state
                 } finally {
                   setIsRefreshingBadges(false);
+                  setBadgeClaimLoadingOpen(false);
                 }
               }}
             >
@@ -444,11 +463,11 @@ export default function EarnPage() {
                 alt="Refresh Icon"
                 width={24}
                 height={24}
-                className={`w-6 h-6 ml-1 ${
-                  isRefreshingBadges ? "animate-spin" : ""
-                }`}
+                className={`w-6 h-6 ml-1 ${isRefreshingBadges ? "animate-spin" : ""
+                  }`}
               />
             </button>
+
           </div>
 
           {/* Active badges */}
@@ -456,7 +475,11 @@ export default function EarnPage() {
         </div>
       )}
 
-      {/* Badge claim success sheet */}
+      <BadgeClaimLoadingSheet
+        open={badgeClaimLoadingOpen}
+        onOpenChange={setBadgeClaimLoadingOpen}
+      />
+
       <BadgeClaimSuccessSheet
         open={badgeSheetOpen}
         onOpenChange={(open) => {

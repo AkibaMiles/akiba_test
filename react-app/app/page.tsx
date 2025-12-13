@@ -76,6 +76,15 @@ const BadgeClaimSuccessSheet = dynamic(
   { ssr: false }
 );
 
+const BadgeClaimLoadingSheet = dynamic(
+  () =>
+    import("@/components/BadgeClaimSuccessSheet").then(
+      (m) => m.BadgeClaimLoadingSheet
+    ),
+  { ssr: false }
+);
+
+
 const PhysicalRaffleSheet = dynamic(
   () => import("@/components/physical-raffle-sheet"),
   { ssr: false }
@@ -236,6 +245,7 @@ export default function Home() {
   >(undefined);
 
   const [hasClaimableBadges, setHasClaimableBadges] = useState(false);
+  const [badgeClaimLoadingOpen, setBadgeClaimLoadingOpen] = useState(false);
 
   /* ───────── Initial mount ───────── */
   useEffect(() => setHasMounted(true), []);
@@ -297,7 +307,7 @@ export default function Home() {
       setHasPassport(false);
       return;
     }
-  
+
     const checkPassport = async () => {
       try {
         const result = await fetchSuperAccountForOwner(address);
@@ -308,10 +318,10 @@ export default function Home() {
         console.log("Error checking passport for address:", address);
       }
     };
-  
+
     void checkPassport();
   }, [address]);
-  
+
 
   /* ───────── Raffles ───────── */
   useEffect(() => {
@@ -331,8 +341,8 @@ export default function Home() {
       .finally(() => setLoading(false));
   }, []);
 
-   /* ───────── Badge refresh helper ───────── */
-   const refreshBadges = async (owner: `0x${string}`) => {
+  /* ───────── Badge refresh helper ───────── */
+  const refreshBadges = async (owner: `0x${string}`) => {
     try {
       const result: any = await fetchSuperAccountForOwner(owner);
 
@@ -688,26 +698,29 @@ export default function Home() {
               type="button"
               className="flex items-center"
               onClick={async () => {
-                if (!address || !hasPassport) {
+                if (!address || !hasPassport) return;
+                if (isRefreshingBadges) return;
+
+                const owner = address as `0x${string}`;
+
+                // 1) Pure refresh path (no claimable badges)
+                if (!hasClaimableBadges) {
+                  setIsRefreshingBadges(true);
+                  try {
+                    await refreshBadges(owner);
+                  } catch {
+                    // swallow
+                  } finally {
+                    setIsRefreshingBadges(false);
+                  }
                   return;
                 }
 
-                if (isRefreshingBadges) {
-                  return;
-                }
-
+                // 2) Claim path → show loading sheet
                 setIsRefreshingBadges(true);
+                setBadgeClaimLoadingOpen(true);
 
                 try {
-                  const owner = address as `0x${string}`;
-
-                  // If no claimable badges, this acts as a pure "Refresh"
-                  if (!hasClaimableBadges) {
-                    await refreshBadges(owner);
-                    return;
-                  }
-
-                  // Otherwise, try to claim and get the newly unlocked tiers
                   const unlocked = await claimProsperityBadgesForOwner(owner);
 
                   // If claiming failed or nothing new was unlocked,
@@ -717,18 +730,18 @@ export default function Home() {
                     return;
                   }
 
-                  // We have newly unlocked tiers → show them in the success modal
                   setUnlockedBadges(unlocked);
 
                   // Refresh progress bars to reflect new tiers
                   await refreshBadges(owner);
 
-                  // Finally open the success sheet
+                  // Open success modal
                   setBadgeSheetOpen(true);
                 } catch {
-                  // swallow, leave UI safe (no success modal)
+                  // swallow, leave UI in safe state
                 } finally {
                   setIsRefreshingBadges(false);
+                  setBadgeClaimLoadingOpen(false);
                 }
               }}
             >
@@ -740,11 +753,11 @@ export default function Home() {
                 alt="Refresh Icon"
                 width={24}
                 height={24}
-                className={`w-6 h-6 ml-1 ${
-                  isRefreshingBadges ? "animate-spin" : ""
-                }`}
+                className={`w-6 h-6 ml-1 ${isRefreshingBadges ? "animate-spin" : ""
+                  }`}
               />
             </button>
+
 
 
           </div>
@@ -813,6 +826,11 @@ export default function Home() {
 
       {/* Physical raffles ... if you display them */}
 
+      <BadgeClaimLoadingSheet
+        open={badgeClaimLoadingOpen}
+        onOpenChange={setBadgeClaimLoadingOpen}
+      />
+
       <BadgeClaimSuccessSheet
         open={badgeSheetOpen}
         onOpenChange={(open) => {
@@ -821,6 +839,7 @@ export default function Home() {
         }}
         unlocked={unlockedBadges}
       />
+
 
       <PhysicalRaffleSheet
         open={activeSheet === "physical"}
