@@ -402,8 +402,6 @@ export default function EarnPage() {
         <div className="mx-4 mt-6">
           <div className="flex justify-between items-center my-2">
             <h3 className="text-lg font-medium">Pass Badges</h3>
-
-            <h3 className="text-lg font-medium">Pass Badges</h3>
             <button
               type="button"
               className="flex items-center"
