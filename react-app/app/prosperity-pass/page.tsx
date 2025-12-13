@@ -16,6 +16,8 @@ import { ProsperityPassSuccessSheet } from "@/components/ProsperityPassSuccessSh
 import { ProsperityPassUsernameSheet } from "@/components/ProsperityPassUsernameSheet";
 import { useWeb3 } from "@/contexts/useWeb3";
 import { akibaMilesSymbolAlt } from "@/lib/svg";
+import { UserRejectedRequestError } from "viem";
+
 
 // 🔗 claim helper
 import { claimProsperityPassForAddress } from "@/lib/prosperity-pass-claim";
@@ -88,63 +90,83 @@ export default function ProsperityPassOnboarding() {
   };
 
   // Centralized burn + claim flow (called after username is confirmed)
-  const runClaimFlow = async () => {
-    if (!address) {
-      setSubmitError("Connect your wallet to claim your Prosperity Pass.");
-      return;
-    }
+const runClaimFlow = async () => {
+  if (!address) {
+    setSubmitError("Connect your wallet to claim your Prosperity Pass.");
+    return;
+  }
 
-    setSubmitError(null);
-    setIsSubmitting(true);
+  setSubmitError(null);
+  setIsSubmitting(true);
 
-    try {
-      // 1) User burns 100 AkibaMiles from their own wallet
-      await burnAkibaMiles(REQUIRED_MILES);
+  // STEP 1: Burn AkibaMiles
+  try {
+    await burnAkibaMiles(REQUIRED_MILES);
+  } catch (err: any) {
+    console.error("[ProsperityPass] burn failed:", err);
 
-      // 2) Backend creates the eco account / Super Account
-      const result = await claimProsperityPassForAddress(
-        address,
-        REQUIRED_MILES
-      );
-
-      console.log("[ProsperityPass] claim result:", result);
-      setShowSuccess(true);
-    } catch (err: any) {
-      console.error("[ProsperityPass] claim failed:", err);
-
-      // Attempt refund if the failure is after burning
-      try {
-        const res = await fetch("/api/refund-for-passport", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ address, amount: REQUIRED_MILES }),
-        });
-
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          console.error(
-            "[ProsperityPass] refund failed:",
-            body?.error || "unknown refund error"
-          );
-        } else {
-          const body = await res.json().catch(() => ({}));
-          console.info(
-            "[ProsperityPass] refund tx:",
-            body?.txHash || "(no txHash returned)"
-          );
-        }
-      } catch (refundErr) {
-        console.error("[ProsperityPass] refund request threw:", refundErr);
-      }
-
+    if (err instanceof UserRejectedRequestError) {
+      // User cancelled in wallet → just tell them, no refund
+      setSubmitError("You cancelled the transaction in your wallet.");
+    } else {
       setSubmitError(
-        err?.message ||
-          "We couldn't complete your Prosperity Pass creation. Your points should be refunded. If not, please contact support."
+        "We couldn't burn your AkibaMiles. Please try again."
       );
-    } finally {
-      setIsSubmitting(false);
     }
-  };
+
+    setIsSubmitting(false);
+    return; // IMPORTANT: no refund attempt, because burn didn't happen
+  }
+
+  // STEP 2: Claim pass (only this part can trigger refund)
+  try {
+    const result = await claimProsperityPassForAddress(
+      address,
+      REQUIRED_MILES
+    );
+
+    console.log("[ProsperityPass] claim result:", result);
+    setShowSuccess(true);
+  } catch (err: any) {
+    console.error("[ProsperityPass] claim failed after burn:", err);
+
+    // Burn has already succeeded, so now we attempt a refund
+    try {
+      const res = await fetch("/api/refund-for-passport", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address, amount: REQUIRED_MILES }),
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        console.error(
+          "[ProsperityPass] refund failed:",
+          body?.error || "unknown refund error"
+        );
+      } else {
+        const body = await res.json().catch(() => ({}));
+        console.info(
+          "[ProsperityPass] refund tx:",
+          body?.txHash || "(no txHash returned)"
+        );
+      }
+    } catch (refundErr) {
+      console.error(
+        "[ProsperityPass] refund request threw:",
+        refundErr
+      );
+    }
+
+    setSubmitError(
+      err?.message ||
+        "We couldn't complete your Prosperity Pass creation. Your points should be refunded. If not, please contact support."
+    );
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
 
   const handleCta = async () => {
     setSubmitError(null);
