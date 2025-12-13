@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/carousel";
 import { prosperityPassSource } from "@/helpers/prosperitypassSource";
 import { ProsperityPassSuccessSheet } from "@/components/ProsperityPassSuccessSheet";
+import { ProsperityPassUsernameSheet } from "@/components/ProsperityPassUsernameSheet";
 import { useWeb3 } from "@/contexts/useWeb3";
 import { akibaMilesSymbolAlt } from "@/lib/svg";
 
@@ -27,11 +28,14 @@ export default function ProsperityPassOnboarding() {
   const [idx, setIdx] = useState(0);
 
   const { address, getUserAddress, getakibaMilesBalance, burnAkibaMiles } =
-  useWeb3();
+    useWeb3();
   const [milesBalance, setMilesBalance] = useState<number | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  // NEW: submit state
+  // NEW: username sheet state
+  const [showUsernameSheet, setShowUsernameSheet] = useState(false);
+
+  // submit state
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -43,7 +47,6 @@ export default function ProsperityPassOnboarding() {
     api.on("select", onSelect);
     onSelect();
 
-    // ✅ explicit cleanup
     return () => {
       api.off("select", onSelect);
     };
@@ -74,7 +77,7 @@ export default function ProsperityPassOnboarding() {
     })();
   }, [address, getakibaMilesBalance]);
 
-  // balance logic: only grey out when we KNOW it's insufficient
+  // balance logic
   const balanceReady = milesBalance !== null;
   const insufficient = balanceReady && milesBalance! < REQUIRED_MILES;
   const canClaim =
@@ -84,25 +87,14 @@ export default function ProsperityPassOnboarding() {
     router.push("/");
   };
 
-  const handleCta = async () => {
-    setSubmitError(null);
-
-    // Not last slide → just move carousel
-    if (!isLast) {
-      api?.scrollNext();
-      return;
-    }
-
+  // Centralized burn + claim flow (called after username is confirmed)
+  const runClaimFlow = async () => {
     if (!address) {
       setSubmitError("Connect your wallet to claim your Prosperity Pass.");
       return;
     }
 
-    if (!canClaim) {
-      // either loading, insufficient, no wallet, or already submitting
-      return;
-    }
-
+    setSubmitError(null);
     setIsSubmitting(true);
 
     try {
@@ -116,15 +108,11 @@ export default function ProsperityPassOnboarding() {
       );
 
       console.log("[ProsperityPass] claim result:", result);
-
       setShowSuccess(true);
     } catch (err: any) {
       console.error("[ProsperityPass] claim failed:", err);
 
-      // If creation step failed AFTER burning, try to refund
-      // We don't have perfect introspection here, but in practice:
-      //  - if burn fails, it throws BEFORE claimProsperityPassForAddress
-      //  - if claim fails, we're in this catch AFTER a successful burn
+      // Attempt refund if the failure is after burning
       try {
         const res = await fetch("/api/refund-for-passport", {
           method: "POST",
@@ -146,10 +134,7 @@ export default function ProsperityPassOnboarding() {
           );
         }
       } catch (refundErr) {
-        console.error(
-          "[ProsperityPass] refund request threw:",
-          refundErr
-        );
+        console.error("[ProsperityPass] refund request threw:", refundErr);
       }
 
       setSubmitError(
@@ -161,6 +146,36 @@ export default function ProsperityPassOnboarding() {
     }
   };
 
+  const handleCta = async () => {
+    setSubmitError(null);
+
+    // Not last slide → just move carousel
+    if (!isLast) {
+      api?.scrollNext();
+      return;
+    }
+
+    // Last slide → claim
+    if (!address) {
+      setSubmitError("Connect your wallet to claim your Prosperity Pass.");
+      return;
+    }
+
+    if (!canClaim) {
+      // either loading, insufficient, no wallet, or already submitting
+      return;
+    }
+
+    // At this point we know they can claim.
+    // Show username sheet FIRST, then runClaimFlow after username is saved.
+    setShowUsernameSheet(true);
+  };
+
+  const handleUsernameConfirmed = async (_username: string) => {
+    // Username is now saved on backend via /api/user/set-username
+    // Now run the burn + claim flow
+    await runClaimFlow();
+  };
 
   return (
     <>
@@ -295,6 +310,14 @@ export default function ProsperityPassOnboarding() {
         open={showSuccess}
         onOpenChange={setShowSuccess}
         onDone={finish}
+      />
+
+      {/* Username sheet overlays before claim */}
+      <ProsperityPassUsernameSheet
+        open={showUsernameSheet}
+        onOpenChange={setShowUsernameSheet}
+        address={address ?? null}
+        onConfirmed={handleUsernameConfirmed}
       />
     </>
   );
