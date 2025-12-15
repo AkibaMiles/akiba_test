@@ -4,11 +4,17 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { createClient } from "@supabase/supabase-js";
 import { StreakInfoSheet } from "@/components/StreakDetailModal";
-
 import { useWeb3 } from "@/contexts/useWeb3";
-import QuestLoadingModal, { QuestStatus } from "./quest-loading-modal";
 
-import { claimBalanceStreak10, claimBalanceStreak30 } from "@/helpers/claimBalanceStreak";
+import {
+  QuestClaimLoadingSheet,
+  QuestClaimResultSheet,
+} from "@/components/QuestClaimSheet";
+
+import {
+  claimBalanceStreak10,
+  claimBalanceStreak30,
+} from "@/helpers/claimBalanceStreak";
 import { claimDailyQuest } from "@/helpers/claimDaily";
 import { claimFiveTransfers } from "@/helpers/claimFiveTransfers";
 import { claimTwentyTransfers } from "@/helpers/claimTwentyTransfers";
@@ -16,19 +22,19 @@ import { claimTenTransfers } from "@/helpers/claimTenTransfers";
 import { claimTopupStreak } from "@/helpers/claimWeeklyTopup";
 
 import { Cash, Door, akibaMilesSymbol } from "@/lib/svg";
-import streakIcon from "@/public/svg/streak.svg"; // ⭐ streak flame
+import streakIcon from "@/public/svg/streak.svg";
 
 /* ─── Supabase ───────────────────────────────────────────── */
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_SERVICE_KEY!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    // fallback only to avoid breaking envs; remove asap
+    (process.env.NEXT_PUBLIC_SUPABASE_SERVICE_KEY as string),
 );
 
-// src/components/daily-challenge.tsx (add near top)
 const TOPUP_STREAK_QUEST_ID = "96009afb-0762-4399-adb3-ced421d73072";
 
-
-/* ─── tiny wrappers to hit your existing API routes ─────── */
+/* ─── tiny wrappers ───────────────────────────────────────── */
 
 async function claimSevenDayStreak(addr: string) {
   const res = await fetch("/api/quests/seven_day_streak", {
@@ -72,17 +78,15 @@ type QuestRow = {
   is_active: boolean;
 };
 
-/** streaks table row (per user+quest) */
+/** streaks table row */
 type StreakRow = {
   quest_id: string;
-  current_streak: number; // 👈 DB column
+  current_streak: number;
 };
 
-/* ─── handler map ────────────────────────────────────────── */
 type QuestHandler = {
   action: (addr: string) => Promise<any>;
   img: any;
-  validate?: (addr: string) => Promise<{ ok: boolean; msg?: string }>;
 };
 
 const ACTION_BY_ID: Record<string, QuestHandler> = {
@@ -96,28 +100,16 @@ const ACTION_BY_ID: Record<string, QuestHandler> = {
   "c6b14ae1-66e9-4777-9c9f-65e57b091b16": { action: claimReceiveDollar, img: Cash },
 
   /* G. Weekly $5 top-up streak */
-  "96009afb-0762-4399-adb3-ced421d73072": {
-    action: claimTopupStreak,
-    img: Cash,
-  },
+  "96009afb-0762-4399-adb3-ced421d73072": { action: claimTopupStreak, img: Cash },
 
   /* H. 7-day daily-quest streak */
-  "6ddc811a-1a4d-4e57-871d-836f07486531": {
-    action: claimSevenDayStreak,
-    img: Cash,
-  },
+  "6ddc811a-1a4d-4e57-871d-836f07486531": { action: claimSevenDayStreak, img: Cash },
 
   /* I. Wallet balance streak ≥ $10 */
-  "feb6e5ef-7d9c-4ca6-a042-e2b692a6b00f": {
-    action: claimBalanceStreak10,
-    img: Cash,
-  },
+  "feb6e5ef-7d9c-4ca6-a042-e2b692a6b00f": { action: claimBalanceStreak10, img: Cash },
 
   /* J. Wallet balance streak ≥ $30 */
-  "a1ac5914-20d4-4436-bf02-29563938fe9d": {
-    action: claimBalanceStreak30,
-    img: Cash,
-  },
+  "a1ac5914-20d4-4436-bf02-29563938fe9d": { action: claimBalanceStreak30, img: Cash },
 
   /* D. Send 5 transfers */
   "f6d027d2-bf52-4768-a87f-2be00a5b03a0": { action: claimFiveTransfers, img: Cash },
@@ -126,35 +118,31 @@ const ACTION_BY_ID: Record<string, QuestHandler> = {
   "ea001296-2405-451b-a590-941af22a8df1": { action: claimTenTransfers, img: Cash },
 
   /* F. Send 20 transfers */
-  "60320fa4-1681-4795-8818-429f11afe784": {
-    action: claimTwentyTransfers,
-    img: Cash,
-  },
+  "60320fa4-1681-4795-8818-429f11afe784": { action: claimTwentyTransfers, img: Cash },
 };
 
 /**
- * Which quests should show the streak flame badge in the top-right.
+ * Which quests show the streak flame badge.
  */
 const STREAK_QUEST_IDS = new Set<string>([
-  // weekly $5 topup streak
+  "6ddc811a-1a4d-4e57-871d-836f07486531",
   "96009afb-0762-4399-adb3-ced421d73072",
-  // daily wallet balance streaks ($10 & $30)
   "feb6e5ef-7d9c-4ca6-a042-e2b692a6b00f",
   "a1ac5914-20d4-4436-bf02-29563938fe9d",
 ]);
 
 /* Desired visual order */
 const ORDERED_IDS = [
-  "a9c68150-7db8-4555-b87f-5e9117b43a08", // check-in
-  "383eaa90-75aa-4592-a783-ad9126e8f04d", // send $1
-  "c6b14ae1-66e9-4777-9c9f-65e57b091b16", // receive $1
-  "feb6e5ef-7d9c-4ca6-a042-e2b692a6b00f", // balance $10
-  "a1ac5914-20d4-4436-bf02-29563938fe9d", // balance $30
-  "96009afb-0762-4399-adb3-ced421d73072", // weekly topup streak
-  "6ddc811a-1a4d-4e57-871d-836f07486531", // 7d streak
-  "f6d027d2-bf52-4768-a87f-2be00a5b03a0", // 5 txs
-  "ea001296-2405-451b-a590-941af22a8df1", // 10 txs
-  "60320fa4-1681-4795-8818-429f11afe784", // 20 txs
+  "a9c68150-7db8-4555-b87f-5e9117b43a08",
+  "383eaa90-75aa-4592-a783-ad9126e8f04d",
+  "c6b14ae1-66e9-4777-9c9f-65e57b091b16",
+  "feb6e5ef-7d9c-4ca6-a042-e2b692a6b00f",
+  "a1ac5914-20d4-4436-bf02-29563938fe9d",
+  "96009afb-0762-4399-adb3-ced421d73072",
+  "6ddc811a-1a4d-4e57-871d-836f07486531",
+  "f6d027d2-bf52-4768-a87f-2be00a5b03a0",
+  "ea001296-2405-451b-a590-941af22a8df1",
+  "60320fa4-1681-4795-8818-429f11afe784",
 ];
 
 function sortByDesiredOrder(rows: QuestRow[]) {
@@ -168,26 +156,30 @@ function sortByDesiredOrder(rows: QuestRow[]) {
   });
 }
 
-/* ────────────────────────────────────────────────────────── */
-export default function DailyChallenges({
-  showCompleted = false,
-}: {
-  showCompleted?: boolean;
-}) {
+export default function DailyChallenges({ showCompleted = false }: { showCompleted?: boolean }) {
   const { address, getUserAddress } = useWeb3();
 
   const [active, setActive] = useState<QuestRow[]>([]);
   const [completed, setCompleted] = useState<QuestRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 🔥 streak counts per questId
+  // streak counts per questId
   const [streakCounts, setStreakCounts] = useState<Record<string, number>>({});
 
-  /* modal */
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalStatus, setStatus] = useState<QuestStatus>("loading");
-  const [modalMsg, setMsg] = useState<string>();
+  // streak info sheet
   const [streakInfoOpen, setStreakInfoOpen] = useState(false);
+
+  // loading + result sheets
+  const [claimBusy, setClaimBusy] = useState(false);
+  const [claimLoadingOpen, setClaimLoadingOpen] = useState(false);
+
+  const [resultOpen, setResultOpen] = useState(false);
+  const [resultVariant, setResultVariant] = useState<"success" | "already" | "error">("success");
+  const [resultTitle, setResultTitle] = useState("");
+  const [resultMessage, setResultMessage] = useState("");
+
+  // for nicer messaging
+  const [lastQuestTitle, setLastQuestTitle] = useState<string>("");
 
   /* wallet */
   useEffect(() => {
@@ -216,7 +208,6 @@ export default function DailyChallenges({
 
       const today = new Date().toISOString().slice(0, 10);
 
-      // daily_engagements has been working, so keep using `address` as-is
       const { data: eng } = await supabase
         .from("daily_engagements")
         .select("quest_id")
@@ -231,7 +222,7 @@ export default function DailyChallenges({
       setActive(sortByDesiredOrder(activeQs));
       setCompleted(sortByDesiredOrder(completedQs));
 
-      // 🔥 streaks table stores user_address in LOWERCASE
+      // streaks table stores user_address in LOWERCASE
       const userLc = address.toLowerCase();
 
       try {
@@ -245,9 +236,7 @@ export default function DailyChallenges({
         } else if (streakRows) {
           const map: Record<string, number> = {};
           (streakRows as StreakRow[]).forEach((row) => {
-            if (STREAK_QUEST_IDS.has(row.quest_id)) {
-              map[row.quest_id] = row.current_streak;
-            }
+            if (STREAK_QUEST_IDS.has(row.quest_id)) map[row.quest_id] = row.current_streak;
           });
           setStreakCounts(map);
         }
@@ -257,98 +246,103 @@ export default function DailyChallenges({
 
       setLoading(false);
     }
-    fetchAll();
+
+    void fetchAll();
   }, [address]);
 
   const quests = showCompleted ? completed : active;
-  if (loading) return null;
 
   async function runQuest(q: QuestRow) {
+    if (showCompleted) return;
     if (!address) return;
+    if (claimBusy) return;
+
     const map = ACTION_BY_ID[q.id];
     if (!map) return;
 
-    setModalOpen(true);
-    setStatus("loading");
-    setMsg(undefined);
+    setClaimBusy(true);
+    setLastQuestTitle(q.title);
+
+    // open loading sheet immediately
+    setClaimLoadingOpen(true);
 
     try {
       const res: any = await map.action(address);
 
-      if (res.success) {
-        setStatus("success");
+      if (res?.success) {
         setActive((cur) => sortByDesiredOrder(cur.filter((x) => x.id !== q.id)));
         setCompleted((cur) => sortByDesiredOrder([...cur, q]));
 
-        // 🔥 update streak count in UI if this is a streak quest
+        // update streak UI if needed
         if (STREAK_QUEST_IDS.has(q.id)) {
           setStreakCounts((prev) => {
             const current = prev[q.id] ?? 0;
-
-            // API might return currentStreak (balances) or streak (topup)
             let serverCount: number | undefined;
             if (typeof res.currentStreak === "number") serverCount = res.currentStreak;
             if (typeof res.streak === "number") serverCount = res.streak;
-
-            const next = serverCount ?? current + 1;
-            return { ...prev, [q.id]: next };
+            return { ...prev, [q.id]: serverCount ?? current + 1 };
           });
         }
-      } else if (res.code === "already") {
-        // 🗓 special handling for weekly topup streak
+
+        setResultVariant("success");
+        setResultTitle("Claim Successful!");
+        setResultMessage(`You claimed ${q.reward_points} AkibaMiles.`);
+      } else if (res?.code === "already") {
+        setResultVariant("already");
+        setResultTitle("Already claimed");
+
         if (q.id === TOPUP_STREAK_QUEST_ID && res.nextClaimDate) {
-          setStatus("already");
-          setMsg(
-            `You’ve already claimed your top-up streak for this week.\n\n` +
-            `Next claim date: ${res.nextClaimDate}`,
+          setResultMessage(
+            `You’ve already claimed your top-up streak for this week.\n\nNext claim date: ${res.nextClaimDate}`,
           );
         } else {
-          setStatus("already");
-          setMsg(res.message || "You’ve already claimed this reward.");
+          setResultMessage(res.message || "You’ve already claimed this reward.");
         }
-      } else if (
-        res.code === "condition-failed" &&
-        typeof res.missingUsd === "number"
-      ) {
-        // tailored message when user doesn’t meet $10 / $30 or weekly topup
+      } else if (res?.code === "condition-failed" && typeof res.missingUsd === "number") {
         const current =
           typeof res.currentUsd === "number"
             ? res.currentUsd.toFixed(2)
             : typeof res.totalUsd === "number"
-              ? res.totalUsd.toFixed(2)
-              : undefined;
+            ? res.totalUsd.toFixed(2)
+            : undefined;
+
         const missing = res.missingUsd.toFixed(2);
 
-        // if this is the weekly topup streak, phrase it accordingly
+        setResultVariant("error");
+        setResultTitle("Not eligible yet");
+
         if (q.id === TOPUP_STREAK_QUEST_ID) {
-          setStatus("error");
-          setMsg(
+          setResultMessage(
             `You need $${missing} more in MiniPay top-ups this week to complete this streak.` +
-            (current ? `\n\nCurrent top-ups this week: $${current}.` : ""),
+              (current ? `\n\nCurrent top-ups this week: $${current}.` : ""),
           );
         } else {
-          // daily balance streaks
-          setStatus("error");
-          setMsg(
+          setResultMessage(
             res.message ||
-            (current
-              ? `You currently have $${current}. Top up $${missing} more to qualify.`
-              : `Top up $${missing} more to qualify.`),
+              (current
+                ? `You currently have $${current}. Top up $${missing} more to qualify.`
+                : `Top up $${missing} more to qualify.`),
           );
         }
       } else {
-        setStatus("error");
-        setMsg(res.message);
+        setResultVariant("error");
+        setResultTitle("Claim failed");
+        setResultMessage(res?.message || "Network or contract error");
       }
     } catch (e) {
       console.error(e);
-      setStatus("error");
-      setMsg("Network or contract error");
+      setResultVariant("error");
+      setResultTitle("Claim failed");
+      setResultMessage("Network or contract error");
+    } finally {
+      setClaimLoadingOpen(false);
+      setResultOpen(true);
+      setClaimBusy(false);
     }
   }
 
+  if (loading) return null;
 
-  /* UI */
   return (
     <>
       {quests.length === 0 && (
@@ -364,36 +358,23 @@ export default function DailyChallenges({
           {quests.map((q) => {
             const map = ACTION_BY_ID[q.id];
             if (!map) return null;
+
             const isStreak = STREAK_QUEST_IDS.has(q.id);
             const streakCount = streakCounts[q.id] ?? 0;
             const showNumber = streakCount > 0;
 
-            const isDailyMultiplierQuest = STREAK_QUEST_IDS.has(q.id);
-            const nextStreak = streakCount + 1;
-
-            let multiplier = 1;
-            if (isDailyMultiplierQuest) {
-              if (nextStreak >= 10) {
-                multiplier = 1.5;
-              } else if (nextStreak >= 3) {
-                multiplier = 1.2;
-              }
-            }
-
-            const basePoints = q.reward_points;
-            const bonusPoints =
-              multiplier > 1 ? Math.floor(basePoints * (multiplier - 1)) : 0;
-
-
             return (
               <button
                 key={q.id}
-                disabled={showCompleted}
+                disabled={showCompleted || claimBusy}
                 onClick={() => runQuest(q)}
                 className={`relative flex-none h-60 w-44 rounded-xl p-4 shadow-xl
-                  ${showCompleted
-                    ? "bg-blue-50 opacity-70 cursor-default"
-                    : "bg-white border border-[#238D9D4D]"
+                  ${
+                    showCompleted
+                      ? "bg-blue-50 opacity-70 cursor-default"
+                      : claimBusy
+                      ? "bg-white border border-[#238D9D4D] opacity-70 cursor-not-allowed"
+                      : "bg-white border border-[#238D9D4D]"
                   }`}
               >
                 {isStreak && (
@@ -427,15 +408,7 @@ export default function DailyChallenges({
                   </p>
                   <p className="mt-2 flex items-center text-xs">
                     <Image src={akibaMilesSymbol} alt="" className="mr-1" />
-                    {multiplier > 1 ? (
-                      <>
-                        {basePoints} + {bonusPoints} AkibaMiles
-                      </>
-                    ) : (
-                      <>
-                        {basePoints} AkibaMiles
-                      </>
-                    )}
+                    {q.reward_points} AkibaMiles
                   </p>
                 </div>
               </button>
@@ -446,11 +419,25 @@ export default function DailyChallenges({
 
       <StreakInfoSheet open={streakInfoOpen} onOpenChange={setStreakInfoOpen} />
 
-      <QuestLoadingModal
-        open={modalOpen}
-        onOpenChange={setModalOpen}
-        status={modalStatus}
-        message={modalMsg}
+      {/* Bottom loading sheet */}
+      <QuestClaimLoadingSheet
+        open={claimLoadingOpen}
+        onOpenChange={setClaimLoadingOpen}
+        title="Claiming reward"
+        message={
+          lastQuestTitle
+            ? `Claiming “${lastQuestTitle}”… This usually takes a few seconds.`
+            : "Processing your claim… This usually takes a few seconds."
+        }
+      />
+
+      {/* Bottom result sheet */}
+      <QuestClaimResultSheet
+        open={resultOpen}
+        onOpenChange={setResultOpen}
+        variant={resultVariant}
+        title={resultTitle}
+        message={resultMessage}
       />
     </>
   );
