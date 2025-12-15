@@ -136,15 +136,8 @@ const ACTION_BY_ID: Record<string, QuestHandler> = {
  * Which quests should show the streak flame badge in the top-right.
  */
 const STREAK_QUEST_IDS = new Set<string>([
-  // daily send ≥ $1
-  "383eaa90-75aa-4592-a783-ad9126e8f04d",
-
-  // 7-day daily quest streak
-  "6ddc811a-1a4d-4e57-871d-836f07486531",
-
   // weekly $5 topup streak
   "96009afb-0762-4399-adb3-ced421d73072",
-
   // daily wallet balance streaks ($10 & $30)
   "feb6e5ef-7d9c-4ca6-a042-e2b692a6b00f",
   "a1ac5914-20d4-4436-bf02-29563938fe9d",
@@ -307,7 +300,7 @@ export default function DailyChallenges({
           setStatus("already");
           setMsg(
             `You’ve already claimed your top-up streak for this week.\n\n` +
-              `Next claim date: ${res.nextClaimDate}`,
+            `Next claim date: ${res.nextClaimDate}`,
           );
         } else {
           setStatus("already");
@@ -322,8 +315,8 @@ export default function DailyChallenges({
           typeof res.currentUsd === "number"
             ? res.currentUsd.toFixed(2)
             : typeof res.totalUsd === "number"
-            ? res.totalUsd.toFixed(2)
-            : undefined;
+              ? res.totalUsd.toFixed(2)
+              : undefined;
         const missing = res.missingUsd.toFixed(2);
 
         // if this is the weekly topup streak, phrase it accordingly
@@ -331,16 +324,16 @@ export default function DailyChallenges({
           setStatus("error");
           setMsg(
             `You need $${missing} more in MiniPay top-ups this week to complete this streak.` +
-              (current ? `\n\nCurrent top-ups this week: $${current}.` : ""),
+            (current ? `\n\nCurrent top-ups this week: $${current}.` : ""),
           );
         } else {
           // daily balance streaks
           setStatus("error");
           setMsg(
             res.message ||
-              (current
-                ? `You currently have $${current}. Top up $${missing} more to qualify.`
-                : `Top up $${missing} more to qualify.`),
+            (current
+              ? `You currently have $${current}. Top up $${missing} more to qualify.`
+              : `Top up $${missing} more to qualify.`),
           );
         }
       } else {
@@ -371,10 +364,26 @@ export default function DailyChallenges({
           {quests.map((q) => {
             const map = ACTION_BY_ID[q.id];
             if (!map) return null;
-
             const isStreak = STREAK_QUEST_IDS.has(q.id);
             const streakCount = streakCounts[q.id] ?? 0;
             const showNumber = streakCount > 0;
+
+            const isDailyMultiplierQuest = STREAK_QUEST_IDS.has(q.id);
+            const nextStreak = streakCount + 1;
+
+            let multiplier = 1;
+            if (isDailyMultiplierQuest) {
+              if (nextStreak >= 10) {
+                multiplier = 1.5;
+              } else if (nextStreak >= 3) {
+                multiplier = 1.2;
+              }
+            }
+
+            const basePoints = q.reward_points;
+            const bonusPoints =
+              multiplier > 1 ? Math.floor(basePoints * (multiplier - 1)) : 0;
+
 
             return (
               <button
@@ -382,10 +391,9 @@ export default function DailyChallenges({
                 disabled={showCompleted}
                 onClick={() => runQuest(q)}
                 className={`relative flex-none h-60 w-44 rounded-xl p-4 shadow-xl
-                  ${
-                    showCompleted
-                      ? "bg-blue-50 opacity-70 cursor-default"
-                      : "bg-white border border-[#238D9D4D]"
+                  ${showCompleted
+                    ? "bg-blue-50 opacity-70 cursor-default"
+                    : "bg-white border border-[#238D9D4D]"
                   }`}
               >
                 {isStreak && (
@@ -419,7 +427,15 @@ export default function DailyChallenges({
                   </p>
                   <p className="mt-2 flex items-center text-xs">
                     <Image src={akibaMilesSymbol} alt="" className="mr-1" />
-                    {q.reward_points} AkibaMiles
+                    {multiplier > 1 ? (
+                      <>
+                        {basePoints} + {bonusPoints} AkibaMiles
+                      </>
+                    ) : (
+                      <>
+                        {basePoints} AkibaMiles
+                      </>
+                    )}
                   </p>
                 </div>
               </button>
