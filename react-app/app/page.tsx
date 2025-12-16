@@ -1,6 +1,6 @@
 // src/app/page.tsx
 "use client";
-
+import { fetchBadgeProgress } from "@/helpers/fetchBadgeProgress";
 import ReferFab from "@/components/refer-fab";
 import DailyChallenges from "@/components/daily-challenge";
 import DashboardHeader from "@/components/dashboard-header";
@@ -347,6 +347,21 @@ const badgeBusy = badgeAction !== "idle";
     };
   }, [address]);
 
+  useEffect(() => {
+    if (!address) return;
+    let cancelled = false;
+  
+    (async () => {
+      const values = await fetchBadgeProgress(address as `0x${string}`);
+      if (!cancelled) setBadgeProgress(values);
+    })();
+  
+    return () => {
+      cancelled = true;
+    };
+  }, [address]);
+  
+
   /* ──────────────────────────────────────────────────────────────── */
   /*  Badges: fast perceived load                                   */
   /*   - single pipeline: fetch passport once → safe                */
@@ -355,68 +370,52 @@ const badgeBusy = badgeAction !== "idle";
   /* ──────────────────────────────────────────────────────────────── */
 
   const refreshBadgesForSafe = async (safe: `0x${string}`) => {
-    // 1) Paint cached state instantly (if any)
+    // 1) Paint cached claimable state instantly (optional)
     const cached = readBadgeCache(safe);
-    if (cached?.badgeProgress) setBadgeProgress(cached.badgeProgress);
     if (typeof cached?.hasClaimableBadges === "boolean") {
       setHasClaimableBadges(cached.hasClaimableBadges);
     }
-
-    // 2) Fetch real state
+  
+    // 2) Fetch claimable state from Prosperity SAFE endpoint
     const base = process.env.NEXT_PUBLIC_BADGES_API_BASE ?? "";
     const url = `${base}/api/user/${safe}`;
-
+  
     const res = await fetch(url, {
       method: "GET",
       headers: { accept: "application/json" },
       cache: "no-store",
     });
-
-    if (!res.ok) {
-      // keep cached UI, don’t hard-reset
-      return;
-    }
-
+  
+    if (!res.ok) return;
+  
     const data: BackendBadgesResponse = await res.json();
     const backendBadges = data.currentBadges ?? [];
-
-    const latest: BadgeProgress = { ...EMPTY_BADGE_PROGRESS };
-
-    (Object.keys(latest) as BadgeKey[]).forEach((key) => {
-      const badgeId = BADGE_ID_BY_KEY[key];
-      if (badgeId == null) return;
-
-      const backendBadge = backendBadges.find(
-        (b) => Number(b.badgeId) === badgeId
-      );
-      if (!backendBadge) return;
-
-      latest[key] = deriveProgressFromBackendBadge(backendBadge);
-    });
-
+  
     const trackedIds = new Set(
       Object.values(BADGE_ID_BY_KEY).filter((id): id is number => id != null)
     );
-
+  
     const claimableExists = backendBadges.some((b) => {
       const idNum = Number(b.badgeId);
       const claimableTier = b.claimableTier ?? 0;
       const currentTier = b.tier ?? 0;
+  
       return (
         trackedIds.has(idNum) &&
         b.claimable === true &&
         claimableTier > currentTier
       );
     });
-
-    setBadgeProgress(latest);
+  
     setHasClaimableBadges(claimableExists);
-
+  
+    // Cache only claimable state here (do NOT cache raw metrics in this safe cache)
     writeBadgeCache(safe, {
-      badgeProgress: latest,
+      badgeProgress: badgeProgress, // or remove this field from cache entirely
       hasClaimableBadges: claimableExists,
     });
   };
+  
 
   // passport + safe pipeline
   useEffect(() => {

@@ -7,6 +7,7 @@ import {
   BADGES,
   type BadgeProgress,
   EMPTY_BADGE_PROGRESS,
+  tiersCompletedFromValue,
 } from "@/lib/prosperityBadges";
 
 type Props = {
@@ -18,20 +19,15 @@ export function BadgesSection({ progress }: Props) {
   const router = useRouter();
   const safeProgress = progress ?? EMPTY_BADGE_PROGRESS;
 
-
   return (
     <div className="mt-6">
       <div className="flex gap-3 overflow-x-auto px-4 pb-2">
         {BADGES.map((b) => {
           // RAW metric value for this badge (e.g. 73 tx, 2400 Miles, etc.)
-          const raw = safeProgress[b.key] ?? 0;
+          const value = safeProgress[b.key] ?? 0;
 
-          // Number of tiers whose threshold is satisfied by this raw value
-          const completedSteps = b.tiers.filter(
-            (t) => raw >= t.threshold
-          ).length;
-
-      
+          // Completed tiers based on thresholds
+          const completedSteps = tiersCompletedFromValue(value, b);
 
           return (
             <BadgeCard
@@ -41,11 +37,13 @@ export function BadgesSection({ progress }: Props) {
               activeIcon={b.activeIcon}
               inactiveIcon={b.inactiveIcon}
               totalSteps={b.tiers.length}
-              completedSteps={raw}
-              onClick={() =>
+              completedSteps={completedSteps}
+              onClick={() => {
                 // Pass the RAW metric to the detail page
-                router.push(`/badges/${b.key}?progress=${raw}`)
-              }
+                router.push(
+                  `/badges/${b.key}?value=${encodeURIComponent(String(value))}`
+                );
+              }}
             />
           );
         })}

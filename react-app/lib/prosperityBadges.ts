@@ -1,6 +1,5 @@
 // src/lib/prosperityBadges.ts
 import type { StaticImageData } from "next/image";
-import { fetchSuperAccountForOwner } from "@/lib/prosperity-pass";
 
 /* ──────────────────────────────────────────────────────────────── */
 /*  Debug helper                                                   */
@@ -10,11 +9,12 @@ const DEBUG_BADGES = true;
 
 function dbg(...args: any[]) {
   if (!DEBUG_BADGES) return;
+  // eslint-disable-next-line no-console
   console.log("[Badges]", ...args);
 }
 
 /* ──────────────────────────────────────────────────────────────── */
-/*  Badge metadata (UI)                                           */
+/*  Badge metadata (UI)                                            */
 /* ──────────────────────────────────────────────────────────────── */
 
 export type BadgeKey =
@@ -24,9 +24,12 @@ export type BadgeKey =
   | "amg-akiba-games";
 
 /**
- * For the dashboard:
- *   BadgeProgress[key] = number of completed tiers (0–5)
- * NOT raw tx count / Miles.
+ * IMPORTANT:
+ * BadgeProgress[key] is the RAW metric value:
+ *  - tx badges: transaction count
+ *  - LAM: lifetime AkibaMiles earned
+ *  - AMG: AkibaMiles earned from games
+ * NOT tiers/steps.
  */
 export type BadgeProgress = Record<BadgeKey, number>;
 
@@ -35,7 +38,7 @@ export type BadgeTierDef = {
   label: string;
   usersCompletedLabel: string;
   requirement: string;
-  threshold: number; // purely for copy in detail modal
+  threshold: number; // used for tier completion checks
 };
 
 export type BadgeDef = {
@@ -244,23 +247,6 @@ export const BADGE_BY_KEY: Record<BadgeKey, BadgeDef> = BADGES.reduce(
   {} as Record<BadgeKey, BadgeDef>
 );
 
-/* ──────────────────────────────────────────────────────────────── */
-/*  Backend mapping + types                                        */
-/* ──────────────────────────────────────────────────────────────── */
-
-/**
- * All three IDs wired:
- *   18 → cel2-transactions
- *   22 → s1-transactions
- *   27 → lam-lifetime-akiba
- */
-const BADGE_ID_BY_KEY: Record<BadgeKey, number | null> = {
-  "cel2-transactions": 18,
-  "s1-transactions": 22,
-  "lam-lifetime-akiba": 27,
-  "amg-akiba-games": 30, // still local-only
-};
-
 export const EMPTY_BADGE_PROGRESS: BadgeProgress = {
   "cel2-transactions": 0,
   "s1-transactions": 0,
@@ -268,210 +254,56 @@ export const EMPTY_BADGE_PROGRESS: BadgeProgress = {
   "amg-akiba-games": 0,
 };
 
-type TierMetadata = {
-  badgeId: number;
-  level: number;
-  minValue: number;
-  points: number;
-};
-
-type BackendBadgeTier = {
-  points: string;
-  tier: string;
-  uri: string;
-  metadata: TierMetadata;
-};
-
-type BackendBadge = {
-  badgeId: string;
-  badgeTiers: BackendBadgeTier[];
-  uri: string;
-  metadata: {
-    name: string;
-    description: string;
-    platform: string;
-    chains: string[];
-    condition: string;
-    image: string;
-    "stack-image": string;
-    season: number | null;
-  };
-  points: number;
-  tier: number;             // claimed tier (what we use for steps)
-  claimableTier: number | null; // higher tier user can claim
-  claimable: boolean;
-};
-
-type BackendBadgesResponse = {
-  currentBadges: BackendBadge[];
-};
-
-/* For filtering/logging just the ones we care about */
-const RELEVANT_BADGE_IDS = new Set<number>([18, 22, 27]);
-
 /* ──────────────────────────────────────────────────────────────── */
-/*  Call our OWN Next.js API: /api/user/[safe]                     */
+/*  Shared helpers (RAW value -> tiers)                             */
 /* ──────────────────────────────────────────────────────────────── */
 
-async function fetchBadgesFromApi(
-  safe: `0x${string}`
-): Promise<BackendBadgesResponse | null> {
-  const base = process.env.NEXT_PUBLIC_BADGES_API_BASE ?? "";
-  const url = `${base}/api/user/${safe}`; // app/api/user/[safe]/route.ts
+export function tiersCompletedFromValue(value: number, def: BadgeDef): number {
+  const v = Number.isFinite(value) ? value : 0;
+  if (v <= 0) return 0;
 
- 
-
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      headers: { accept: "application/json" },
-      cache: "no-store",
-    });
-
-
-
-    if (!res.ok) {
-      dbg("[Badges] API not ok, returning null");
-      return null;
-    }
-
-    const data = (await res.json()) as BackendBadgesResponse;
-    const currentBadges = data.currentBadges ?? [];
-
-    
-
-    const relevant = currentBadges.filter((b) =>
-      RELEVANT_BADGE_IDS.has(Number(b.badgeId))
-    );
-
-    dbg(
-      "[Badges] Relevant badges (18,22,27):",
-      relevant.map((b) => ({
-        badgeId: b.badgeId,
-        name: b.metadata?.name,
-        tier: b.tier,
-        claimableTier: b.claimableTier,
-        points: b.points,
-        claimable: b.claimable,
-      }))
-    );
-
-    const claimableOrTier = relevant.filter((b) => {
-      const t = typeof b.tier === "number" ? b.tier : 0;
-      const ct =
-        typeof b.claimableTier === "number" ? b.claimableTier : 0;
-      return t > 0 || ct > 0;
-    });
-
-    return data;
-  } catch (err) {
-    console.error("[Badges] ERROR calling /api/user/[safe]:", err);
-    return null;
+  let steps = 0;
+  for (const t of def.tiers) {
+    if (v >= t.threshold) steps++;
   }
+  return Math.min(steps, def.tiers.length);
+}
+
+export function isBadgeCompletedFromValue(value: number, def: BadgeDef): boolean {
+  if (!def.tiers.length) return false;
+  return value >= def.tiers[def.tiers.length - 1].threshold;
 }
 
 /* ──────────────────────────────────────────────────────────────── */
-/*  Map backend → #completed steps (0–5)                           */
+/*  Backend badge IDs (Prosperity backend)                           */
 /* ──────────────────────────────────────────────────────────────── */
 
 /**
- * For UI steps:
- *   - Use badge.tier only.
- *   - tier is 0 if nothing claimed (even if claimableTier > 0).
- *   - Clamp to [0, def.tiers.length].
+ * Prosperity badge IDs as provided by your backend:
+ *   18 → cel2-transactions
+ *   22 → s1-transactions
+ *   27 → lam-lifetime-akiba
+ *   30 → amg-akiba-games (not currently supplied by prosperity backend in your setup)
  */
-function deriveStepsFromBadge(
-  backend: BackendBadge,
-  def: BadgeDef
-): number {
-  const rawTier =
-    typeof backend.tier === "number" ? backend.tier : 0;
-
-  dbg("deriveStepsFromBadge", {
-    badgeId: backend.badgeId,
-    name: backend.metadata?.name,
-    tier: backend.tier,
-    claimableTier: backend.claimableTier,
-  });
-
-  if (!rawTier || rawTier <= 0) {
-    dbg("→ no claimed tier, steps = 0");
-    return 0;
-  }
-
-  const steps = Math.max(0, Math.min(rawTier, def.tiers.length));
-  dbg("→ steps from tier:", steps, "/", def.tiers.length);
-  return steps;
-}
+export const BADGE_ID_BY_KEY: Record<BadgeKey, number | null> = {
+  "cel2-transactions": 18,
+  "s1-transactions": 22,
+  "lam-lifetime-akiba": 27,
+  "amg-akiba-games": 30,
+};
 
 /* ──────────────────────────────────────────────────────────────── */
-/*  PUBLIC: fetchBadgeProgressForUser(owner EOA)                   */
+/*  Optional: small debug utility                                  */
 /* ──────────────────────────────────────────────────────────────── */
 
-export async function fetchBadgeProgressForUser(
-  owner: `0x${string}`
-): Promise<BadgeProgress> {
-  dbg("fetchBadgeProgressForUser called with owner:", owner);
-
-  let safe: `0x${string}` | null = null;
-
-  try {
-    const result: any = await fetchSuperAccountForOwner(owner);
-    dbg("fetchSuperAccountForOwner result:", result);
-
-    if (result?.hasPassport && result?.account?.smartAccount) {
-      safe = result.account.smartAccount as `0x${string}`;
-      dbg("Resolved SAFE from helper:", safe);
-    } else {
-      dbg(
-        "No SAFE from helper (no passport or missing smartAccount). Returning all zeros."
-      );
-      return { ...EMPTY_BADGE_PROGRESS };
-    }
-  } catch (err) {
-    console.error("[Badges] Error in fetchSuperAccountForOwner:", err);
-    return { ...EMPTY_BADGE_PROGRESS };
-  }
-
-  const data = await fetchBadgesFromApi(safe);
-  if (!data) {
-    dbg("No data from API, returning EMPTY_BADGE_PROGRESS.");
-    return { ...EMPTY_BADGE_PROGRESS };
-  }
-
-  const backendBadges = data.currentBadges ?? [];
-
-  const progress: BadgeProgress = { ...EMPTY_BADGE_PROGRESS };
-
-  (Object.keys(progress) as BadgeKey[]).forEach((key) => {
-    const badgeId = BADGE_ID_BY_KEY[key];
-    const def = BADGE_BY_KEY[key];
-
-    dbg(`Mapping key=${key} → badgeId=`, badgeId, "title=", def.title);
-
-    if (badgeId == null) {
-      dbg(`No badgeId mapped for key=${key}; leaving steps=0.`);
-      progress[key] = 0;
-      return;
-    }
-
-    const backendBadge = backendBadges.find(
-      (b) => Number(b.badgeId) === badgeId
-    );
-
-    if (!backendBadge) {
-      dbg(
-        `No backend badge found for badgeId=${badgeId} (key=${key}); steps=0.`
-      );
-      progress[key] = 0;
-      return;
-    }
-
-    const steps = deriveStepsFromBadge(backendBadge, def);
-    dbg(`Final steps for key=${key} (badgeId=${badgeId}):`, steps);
-    progress[key] = steps;
+export function debugBadgeValue(key: BadgeKey, value: number) {
+  if (!DEBUG_BADGES) return;
+  const def = BADGE_BY_KEY[key];
+  dbg("debugBadgeValue", {
+    key,
+    title: def.title,
+    value,
+    completedSteps: tiersCompletedFromValue(value, def),
+    thresholds: def.tiers.map((t) => t.threshold),
   });
-
-  dbg("Final computed BadgeProgress (steps):", progress);
-  return progress;
 }

@@ -20,7 +20,7 @@ const Layout: FC<Props> = ({ children }) => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const mp = !!(window as any).ethereum?.isMiniPay;
-    console.log('[Layout] MiniPay detected?', mp);
+    
     setIsMiniPay(mp);
   }, []);
 
@@ -28,7 +28,6 @@ const Layout: FC<Props> = ({ children }) => {
   useEffect(() => {
     (async () => {
       try {
-        console.log('[Layout] calling getUserAddress()');
         await getUserAddress();
       } catch (err) {
         console.warn('[Layout] getUserAddress error:', err);
@@ -38,7 +37,6 @@ const Layout: FC<Props> = ({ children }) => {
 
   /* membership flag */
   const { data: isMember, isFetched, isError } = useMembership();
-  console.log('[Layout] membership state', { isMember, isFetched, isError });
 
   /* helper paths */
   const isOnboarding = pathname.startsWith('/onboarding');
@@ -53,31 +51,23 @@ const Layout: FC<Props> = ({ children }) => {
 
     if (!isFetched) return;
 
-    console.log('[Layout] MiniPay env, membership fetched', {
-      isMember,
-      isOnboarding,
-      isClaim,
-    });
+   
 
     if (!isMember && !isOnboarding && !isClaim) {
-      console.log('[Layout] redirecting non-member in MiniPay -> /onboarding');
       router.replace('/onboarding');
     }
   }, [isMiniPay, isFetched, isMember, isOnboarding, isClaim, router]);
 
   /* while still detecting MiniPay, avoid flicker */
   if (isMiniPay === null) {
-    console.log('[Layout] waiting for MiniPay detection…');
     return null;
   }
 
   /* Only block on membership loading if we are actually in MiniPay */
   if (isMiniPay && !isFetched) {
-    console.log('[Layout] MiniPay + membership not fetched yet → gating render');
     return null;
   }
 
-  console.log('[Layout] rendering app', { isMiniPay, isOnboarding, isClaim });
 
   return (
     <div className="bg-gypsum overflow-hidden flex flex-col min-h-screen">
