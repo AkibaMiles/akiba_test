@@ -63,7 +63,7 @@ export const BadgeCard: FC<BadgeCardProps> = ({
             height={42}
             className={
               "h-[42px] w-[42px]" +
-              (isEmpty ? " opacity-30 mix-blend-luminosity" : "")
+              (isEmpty ? " mix-blend-luminosity" : "")
             }
           />
         </div>
