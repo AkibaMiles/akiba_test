@@ -563,14 +563,11 @@ const badgeBusy = badgeAction !== "idle";
 
   const headerName = displayName || (address ? truncateEthAddress(address) : "");
 
-  const badgeButtonLabel =
-  badgeAction === "checking"
-    ? "Checking…"
-    : badgeAction === "claiming"
-    ? "Claiming…"
-    : hasClaimableBadges
-    ? "Claim Badges"
-    : "Refresh Badges";
+  const claimDisabled = badgeBusy || !hasClaimableBadges;
+
+const badgeButtonLabel =
+  badgeAction === "claiming" ? "Claiming…" : "Claim Badges";
+
 
 
   /* ───────── Render ───────── */
@@ -616,56 +613,63 @@ const badgeBusy = badgeAction !== "idle";
 
           {passport.status === "has" && (
             <button
-              type="button"
-              className="flex items-center" disabled={badgeBusy}
-              onClick={async () => {
-                if (passport.status !== "has") return;
-                if (badgeBusy) return;
-              
-                const safe = passport.safe;
-              
-                // If we currently think it's claimable, we run claim path.
-                // Otherwise we run a "check/refresh" path.
-                const doClaim = hasClaimableBadges === true;
-              
-                setBadgeAction(doClaim ? "claiming" : "checking");
-              
-                if (doClaim) setBadgeClaimLoadingOpen(true);
-              
-                try {
-                  if (!doClaim) {
-                    await refreshBadgesForSafe(safe);
-                    return;
-                  }
-              
-                  const unlocked = await claimProsperityBadgesForSafe(safe);
-              
-                  // Refresh progress + claimable state after claim
-                  await refreshBadgesForSafe(safe);
-              
-                  if (unlocked.length > 0) {
-                    setUnlockedBadges(unlocked);
-                    setBadgeSheetOpen(true);
-                  } else {
-                    setUnlockedBadges([]);
-                  }
-                } catch {
-                  // swallow
-                } finally {
-                  if (doClaim) setBadgeClaimLoadingOpen(false);
-                  setBadgeAction("idle");
+            type="button"
+            className="flex items-center"
+            disabled={claimDisabled}
+            onClick={async () => {
+              if (passport.status !== "has") return;
+              if (claimDisabled) return;
+          
+              const safe = passport.safe;
+          
+              setBadgeAction("claiming");
+              setBadgeClaimLoadingOpen(true);
+          
+              try {
+                const unlocked = await claimProsperityBadgesForSafe(safe);
+          
+                // Refresh progress + claimable state after claim
+                await refreshBadgesForSafe(safe);
+          
+                if (unlocked.length > 0) {
+                  setUnlockedBadges(unlocked);
+                  setBadgeSheetOpen(true);
+                } else {
+                  setUnlockedBadges([]);
                 }
-              }}
-              
+              } catch {
+                // swallow
+              } finally {
+                setBadgeClaimLoadingOpen(false);
+                setBadgeAction("idle");
+              }
+            }}
+          >
+            <span
+              className={[
+                "text-sm font-medium",
+                claimDisabled
+                  ? "text-gray-400 cursor-not-allowed"
+                  : "text-[#238D9D] hover:underline",
+              ].join(" ")}
             >
-              <span className="text-sm text-[#238D9D] hover:underline font-medium">
-                {badgeButtonLabel}
-              </span>
+              {badgeButtonLabel}
+            </span>
+          
+            {/* Only show the icon when claimable / busy (no icon when disabled due to no claimables) */}
+            {!claimDisabled && (
               <span className={`ml-1 inline-flex ${badgeBusy ? "animate-spin" : ""}`}>
-  <Image src={RefreshSvg} alt="Refresh Icon" width={24} height={24} className="w-6 h-6" />
-</span>
-
-            </button>
+                <Image
+                  src={RefreshSvg}
+                  alt="Claim Badges"
+                  width={24}
+                  height={24}
+                  className="w-6 h-6"
+                />
+              </span>
+            )}
+          </button>
+          
           )}
         </div>
 
