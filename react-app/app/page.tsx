@@ -20,7 +20,8 @@ import {
 } from "@/lib/img";
 import { akibaMilesSymbol, RefreshSvg } from "@/lib/svg";
 import Image, { type StaticImageData } from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
 import {
   fetchActiveRaffles,
   PhysicalRaffle,
@@ -284,6 +285,48 @@ export default function Home() {
 >("idle");
 
 const badgeBusy = badgeAction !== "idle";
+//Auto-Refresh
+const BALANCE_REFRESH_EVENT = "akiba:miles:refresh";
+
+const lastBalanceRef = useRef<string>("0");
+
+useEffect(() => {
+  lastBalanceRef.current = akibaMilesBalance;
+}, [akibaMilesBalance]);
+
+const refreshInFlightRef = useRef(false);
+
+const refreshMilesBalance = useCallback(async (): Promise<string | null> => {
+  if (!address) return null;
+  try {
+    const balance = await getakibaMilesBalance();
+    setakibaMilesBalance(balance);
+    return balance;
+  } catch {
+    return null;
+  }
+}, [address, getakibaMilesBalance]);
+
+// Poll a few times until we observe a change (handles RPC lag / async mint/burn)
+const refreshMilesBalanceSoon = useCallback(async () => {
+  if (refreshInFlightRef.current) return;
+  refreshInFlightRef.current = true;
+
+  const prev = lastBalanceRef.current;
+  const delays = [0, 1500, 4500, 10000, 20000]; // ~20s window
+
+  try {
+    for (let i = 0; i < delays.length; i++) {
+      const d = delays[i];
+      if (d > 0) await new Promise((r) => setTimeout(r, d));
+
+      const next = await refreshMilesBalance();
+      if (next != null && next !== prev) break;
+    }
+  } finally {
+    refreshInFlightRef.current = false;
+  }
+}, [refreshMilesBalance]);
 
 
   /* ───────── Initial mount ───────── */
@@ -294,19 +337,17 @@ const badgeBusy = badgeAction !== "idle";
     getUserAddress();
   }, [getUserAddress]);
 
-  /* ───────── Balance ───────── */
   useEffect(() => {
-    const fetchBalance = async () => {
-      if (!address) return;
-      try {
-        const balance = await getakibaMilesBalance();
-        setakibaMilesBalance(balance);
-      } catch {
-        // swallow
-      }
-    };
-    void fetchBalance();
-  }, [address, getakibaMilesBalance]);
+    void refreshMilesBalance();
+  }, [refreshMilesBalance]);
+
+  useEffect(() => {
+    const handler = () => void refreshMilesBalanceSoon();
+    window.addEventListener(BALANCE_REFRESH_EVENT, handler);
+    return () => window.removeEventListener(BALANCE_REFRESH_EVENT, handler);
+  }, [refreshMilesBalanceSoon]);
+  
+  
 
   /* ───────── Username / displayName ───────── */
   useEffect(() => {
@@ -630,6 +671,8 @@ const badgeButtonLabel =
           
                 // Refresh progress + claimable state after claim
                 await refreshBadgesForSafe(safe);
+
+                refreshMilesBalanceSoon()
           
                 if (unlocked.length > 0) {
                   setUnlockedBadges(unlocked);
@@ -765,19 +808,26 @@ const badgeButtonLabel =
         unlocked={unlockedBadges}
       />
 
-      <PhysicalRaffleSheet
-        open={activeSheet === "physical"}
-        onOpenChange={(o) => setActiveSheet(o ? "physical" : null)}
-        raffle={physicalRaffle}
-      />
+<PhysicalRaffleSheet
+  open={activeSheet === "physical"}
+  onOpenChange={(o) => {
+    setActiveSheet(o ? "physical" : null);
+    if (!o) void refreshMilesBalanceSoon();
+  }}
+  raffle={physicalRaffle}
+/>
 
-      {hasMounted && (
-        <SpendPartnerQuestSheet
-          open={activeSheet === "token"}
-          onOpenChange={(o) => setActiveSheet(o ? "token" : null)}
-          raffle={spendRaffle}
-        />
-      )}
+{hasMounted && (
+  <SpendPartnerQuestSheet
+    open={activeSheet === "token"}
+    onOpenChange={(o) => {
+      setActiveSheet(o ? "token" : null);
+      if (!o) void refreshMilesBalanceSoon();
+    }}
+    raffle={spendRaffle}
+  />
+)}
+
 
       <ReferFab />
     </main>

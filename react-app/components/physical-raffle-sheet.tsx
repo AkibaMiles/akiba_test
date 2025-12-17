@@ -37,6 +37,7 @@ type Props = {
 };
 
 const explorerBase = "https://celoscan.io/tx";
+const BALANCE_REFRESH_EVENT = "akiba:miles:refresh";
 
 const emailLooksValid = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 // Kenyan phone UI piece: exactly 9 digits after +254 (e.g. 7xxxxxxxx)
@@ -256,6 +257,7 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
 
       try { await new Promise((r) => setTimeout(r, 3000)); } catch {}
       setJoined(true);
+      window.dispatchEvent(new Event(BALANCE_REFRESH_EVENT));
     } catch (err: any) {
       const rejected =
         err instanceof UserRejectedRequestError ||
@@ -321,13 +323,17 @@ export default function PhysicalRaffleSheet({ open, onOpenChange, raffle }: Prop
                 </Link>
               )}
 
-              <Button
-                className="w-full rounded-xl bg-[#238D9D1A] text-[#238D9D] py-4 font-medium text-lg h-[56px]"
-                onClick={() => onOpenChange(false)}
-                title={"Close"}
-              >
-                Close
-              </Button>
+<Button
+  className="w-full rounded-xl bg-[#238D9D1A] text-[#238D9D] py-4 font-medium text-lg h-[56px]"
+  onClick={() => {
+    window.dispatchEvent(new Event("akiba:miles:refresh"));
+    onOpenChange(false);
+  }}
+  title={"Close"}
+>
+  Close
+</Button>
+
             </div>
           ) : (
             <div>

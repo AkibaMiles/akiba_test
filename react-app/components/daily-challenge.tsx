@@ -33,6 +33,7 @@ const supabase = createClient(
 );
 
 const TOPUP_STREAK_QUEST_ID = "96009afb-0762-4399-adb3-ced421d73072";
+const BALANCE_REFRESH_EVENT = "akiba:miles:refresh";
 
 /* ─── tiny wrappers ───────────────────────────────────────── */
 
@@ -273,6 +274,8 @@ export default function DailyChallenges({ showCompleted = false }: { showComplet
         setActive((cur) => sortByDesiredOrder(cur.filter((x) => x.id !== q.id)));
         setCompleted((cur) => sortByDesiredOrder([...cur, q]));
 
+         // ✅ Refresh miles balance on homepage
+  window.dispatchEvent(new Event(BALANCE_REFRESH_EVENT));
         // update streak UI if needed
         if (STREAK_QUEST_IDS.has(q.id)) {
           setStreakCounts((prev) => {

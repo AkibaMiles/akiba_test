@@ -43,6 +43,7 @@ interface SpendPartnerQuestSheetProps {
 }
 
 const PRESETS = [1, 5, 10, 25, 50];
+const BALANCE_REFRESH_EVENT = "akiba:miles:refresh";
 
 export default function SpendPartnerQuestSheet({
   open,
@@ -148,6 +149,7 @@ export default function SpendPartnerQuestSheet({
 
       // 4️⃣ Switch to success screen
       setJoined(true);
+      window.dispatchEvent(new Event(BALANCE_REFRESH_EVENT));
     } catch (err: any) {
       posthog.capture("buy-button-press-error", {
         err: err
@@ -242,10 +244,16 @@ export default function SpendPartnerQuestSheet({
 
             {/* done button */}
             <Button
-              className="w-full rounded-xl bg-[#238D9D1A] text-[#238D9D] py-4 font-medium text-lg h-[56px]"
-              onClick={() => onOpenChange(false)} title={"Close"}  >
-              Close
-            </Button>
+  className="w-full rounded-xl bg-[#238D9D1A] text-[#238D9D] py-4 font-medium text-lg h-[56px]"
+  onClick={() => {
+    window.dispatchEvent(new Event("akiba:miles:refresh"));
+    onOpenChange(false);
+  }}
+  title={"Close"}
+>
+  Close
+</Button>
+
           </div>
 
         ) : (
