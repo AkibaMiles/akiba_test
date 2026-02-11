@@ -19,6 +19,7 @@ import StableTokenABI from "@/contexts/cusd-abi.json";
 import MiniMilesAbi from "@/contexts/minimiles.json";
 import raffleAbi from "@/contexts/miniraffle.json";
 import diceAbi from "@/contexts/akibadice.json";
+import { buildVoucherIssueMessage } from "@/lib/voucherIssueAuth";
 import posthog from "posthog-js";
 
 const DICE_ADDRESS = "0xf77e7395Aa5c89BcC8d6e23F67a9c7914AB9702a" as const;
@@ -534,6 +535,39 @@ const getDicePlayerStats = useCallback(
     [address, publicClient]
   );
 
+  const signVoucherIssueProof = useCallback(
+    async (input: { merchant_id: string; voucher_template_id: string }) => {
+      if (!walletClient || !address) throw new Error("Wallet not connected");
+
+      const timestamp = Date.now();
+      const nonce =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${timestamp}-${Math.random().toString(36).slice(2)}`;
+
+      const message = buildVoucherIssueMessage({
+        address: address as `0x${string}`,
+        merchant_id: input.merchant_id,
+        voucher_template_id: input.voucher_template_id,
+        timestamp,
+        nonce,
+      });
+
+      const signature = await walletClient.signMessage({
+        account: address as `0x${string}`,
+        message,
+      });
+
+      return {
+        address: address as `0x${string}`,
+        timestamp,
+        nonce,
+        signature,
+      };
+    },
+    [walletClient, address]
+  );
+
 
   return {
     address,
@@ -546,6 +580,7 @@ const getDicePlayerStats = useCallback(
     getDiceTierStats,
     getDicePlayerStats,
     getLastResolvedRoundForPlayer,
-    burnAkibaMiles
+    burnAkibaMiles,
+    signVoucherIssueProof,
   };
 }

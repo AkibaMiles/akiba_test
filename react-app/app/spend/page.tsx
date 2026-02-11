@@ -10,12 +10,14 @@ import { RaffleDetails } from '@/components/raffle-details';
 import { SectionHeading } from '@/components/section-heading';
 import SpendPartnerQuestSheet from '@/components/spend-partner-quest-sheet';
 import SuccessModal from '@/components/success-modal';
+import MerchantVoucherSheet from '@/components/merchant-voucher-sheet';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useWeb3 } from '@/contexts/useWeb3';
+import { fetchSpendMerchants, type SpendMerchant } from '@/helpers/spendMerchants';
 import type { Address } from 'viem'
 import type { PhysicalSpendRaffle } from "@/components/physical-raffle-sheet";
-import { Dice, RaffleImg1, RaffleImg2, RaffleImg3, airpods, laptop, bicycle, nft1, nft2, RaffleImg5, oraimo, smartwatch, speaker, sambuds, credo, promo, itel, amaya, jbl } from '@/lib/img';
+import { Dice, RaffleImg1, RaffleImg2, RaffleImg3, airpods, laptop, bicycle, nft1, nft2, RaffleImg5, oraimo, smartwatch, speaker, sambuds, credo, promo, itel, amaya, jbl, vitron } from '@/lib/img';
 import { Coin, akibaMilesSymbol } from '@/lib/svg';
 import { Question } from '@phosphor-icons/react';
 import { StaticImageData } from 'next/image';
@@ -79,12 +81,23 @@ const PHYSICAL_TITLES: Record<number, string> = {
 95: 'Bluetooth Speakers HIFI Boomboxes For Laptop,TV',
 97: 'KES 500 Airtime Reward'
 };
+const MERCHANT_IMAGES: Record<string, StaticImageData> = {
+  oraimo,
+  amaya,
+  vitron,
+  default: promo,
+};
 
 const pickPhysicalImage = (raffle: PhysicalRaffle) =>
   PHYSICAL_IMAGES[raffle.id] ?? sambuds;
 
 const physicalTitle = (raffle: PhysicalRaffle) =>
   PHYSICAL_TITLES[raffle.id] ?? 'Physical prize';
+
+const pickMerchantImage = (merchant: SpendMerchant) => {
+  const key = (merchant.image_key ?? '').toLowerCase();
+  return MERCHANT_IMAGES[key] ?? MERCHANT_IMAGES.default;
+};
 
 // Shape it to what SpendPartnerQuestSheet expects:
 type SpendRaffle = {
@@ -139,6 +152,9 @@ const Page = () => {
   const [spendRaffle, setSpendRaffle] = useState<SpendRaffle | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
   const [openSuccess, setOpenSuccess] = useState(false);
+  const [merchants, setMerchants] = useState<SpendMerchant[]>([]);
+  const [selectedMerchant, setSelectedMerchant] = useState<SpendMerchant | null>(null);
+  const [merchantSheetOpen, setMerchantSheetOpen] = useState(false);
 
 
   useEffect(() => {
@@ -171,6 +187,15 @@ const Page = () => {
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    fetchSpendMerchants()
+      .then(setMerchants)
+      .catch((error) => {
+        console.error('[spend merchants] failed:', error);
+        setMerchants([]);
+      });
+  }, []);
 
   const formatEndsIn = (ends: number) => {
     const nowSec = Math.floor(Date.now() / 1000);
@@ -243,7 +268,7 @@ const Page = () => {
       </div>
 
        {/* PHYSICAL */}
-       <div className="mx-4 mt-6">
+      <div className="mx-4 mt-6">
         <div className="flex justify-between items-center">
           <h3 className="text-lg font-extrabold mb-2">Physical Goods Rewards</h3>
         </div>
@@ -282,6 +307,33 @@ const Page = () => {
 
           {physicalRaffles.length === 0 && (
             <div className="text-sm opacity-70 px-2 py-4">No physical rewards live right now.</div>
+          )}
+        </div>
+      </div>
+
+      <div className="mx-4 mt-6">
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg font-extrabold mb-2">Merchants</h3>
+        </div>
+        <div className="flex gap-3 overflow-x-auto">
+          {merchants.map((merchant) => (
+            <RaffleCard
+              key={merchant.id}
+              image={pickMerchantImage(merchant)}
+              title={merchant.name}
+              endsIn={merchant.country}
+              ticketCost={`${merchant.vouchers_available} voucher${merchant.vouchers_available === 1 ? '' : 's'}`}
+              icon={akibaMilesSymbol}
+              locked={false}
+              onClick={() => {
+                setSelectedMerchant(merchant);
+                setMerchantSheetOpen(true);
+              }}
+            />
+          ))}
+
+          {merchants.length === 0 && (
+            <div className="text-sm opacity-70 px-2 py-4">No merchants live right now.</div>
           )}
         </div>
       </div>
@@ -372,6 +424,16 @@ const Page = () => {
     raffle={spendRaffle}
   />
 )}
+
+<MerchantVoucherSheet
+  open={merchantSheetOpen}
+  onOpenChange={(open) => {
+    setMerchantSheetOpen(open);
+    if (!open) setSelectedMerchant(null);
+  }}
+  merchantSlug={selectedMerchant?.slug ?? null}
+  image={selectedMerchant ? pickMerchantImage(selectedMerchant) : MERCHANT_IMAGES.default}
+/>
 
 
     </main>

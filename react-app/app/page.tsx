@@ -4,6 +4,7 @@ import { fetchBadgeProgress } from "@/helpers/fetchBadgeProgress";
 import ReferFab from "@/components/refer-fab";
 import DailyChallenges from "@/components/daily-challenge";
 import DashboardHeader from "@/components/dashboard-header";
+import UserVouchersSheet from "@/components/user-vouchers-sheet";
 import { RaffleCard } from "@/components/raffle-card";
 import PointsCard from "@/components/points-card";
 import { useWeb3 } from "@/contexts/useWeb3";
@@ -91,10 +92,6 @@ const SpendPartnerQuestSheet = dynamic(
   () => import("@/components/spend-partner-quest-sheet"),
   { ssr: false }
 );
-
-const WinningModal = dynamic(() => import("@/components/winning-modal"), {
-  ssr: false,
-});
 
 /* ──────────────────────────────────────────────────────────────── */
 /*  Raffle image mapping                                           */
@@ -253,7 +250,7 @@ export default function Home() {
   const { address, getUserAddress, getakibaMilesBalance } = useWeb3();
 
   const [akibaMilesBalance, setakibaMilesBalance] = useState("0");
-  const [winnerOpen, setWinnerOpen] = useState(false);
+  const [vouchersOpen, setVouchersOpen] = useState(false);
   const [tokenRaffles, setTokenRaffles] = useState<TokenRaffleWithWinners[]>([]);
   const [physicalRaffles, setPhysicalRaffles] = useState<PhysicalRaffle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -615,14 +612,15 @@ const badgeButtonLabel =
 
   return (
     <main className="pb-24 font-sterling">
-      {/* Winner modal */}
-      {winnerOpen && (
-        <WinningModal open={winnerOpen} onOpenChange={setWinnerOpen} />
-      )}
+      <UserVouchersSheet
+        open={vouchersOpen}
+        onOpenChange={setVouchersOpen}
+        address={address}
+      />
 
       <DashboardHeader
         name={headerName}
-        onOpenWinners={() => setWinnerOpen(true)}
+        onOpenVouchers={() => setVouchersOpen(true)}
       />
       <PointsCard points={Number(akibaMilesBalance)} />
 
