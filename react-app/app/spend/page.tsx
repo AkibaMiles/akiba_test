@@ -17,7 +17,7 @@ import { useWeb3 } from '@/contexts/useWeb3';
 import { fetchSpendMerchants, type SpendMerchant } from '@/helpers/spendMerchants';
 import type { Address } from 'viem'
 import type { PhysicalSpendRaffle } from "@/components/physical-raffle-sheet";
-import { Dice, RaffleImg1, RaffleImg2, RaffleImg3, airpods, laptop, bicycle, nft1, nft2, RaffleImg5, oraimo, smartwatch, speaker, sambuds, credo, promo, itel, amaya, jbl, vitron } from '@/lib/img';
+import { Dice, RaffleImg1, RaffleImg2, RaffleImg3, airpods, laptop, bicycle, nft1, nft2, RaffleImg5, oraimo, smartwatch, speaker, sambuds, credo, promo, itel, amaya, jbl, vitron, leshan } from '@/lib/img';
 import { Coin, akibaMilesSymbol } from '@/lib/svg';
 import { Question } from '@phosphor-icons/react';
 import { StaticImageData } from 'next/image';
@@ -82,10 +82,8 @@ const PHYSICAL_TITLES: Record<number, string> = {
 97: 'KES 500 Airtime Reward'
 };
 const MERCHANT_IMAGES: Record<string, StaticImageData> = {
-  oraimo,
-  amaya,
-  vitron,
-  default: promo,
+  leshan,
+  default: leshan,
 };
 
 const pickPhysicalImage = (raffle: PhysicalRaffle) =>

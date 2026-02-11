@@ -24,6 +24,7 @@ import itel from "../public/img/itel.jpg"
 import jbl from "../public/img/jbl.jpg"
 import oraimo from "../public/img/oraimo.jpg"
 import smartwatch from "../public/img/smartwatch.jpg"
+import leshan from "../public/img/leshan.jpg"
 
 export {
   WinImg,
@@ -45,5 +46,5 @@ export {
   credo,
   promo,
   vitron, spk, power,
-  amaya, jbl,itel, oraimo, smartwatch
+  amaya, jbl,itel, oraimo, smartwatch, leshan
 };
