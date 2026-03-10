@@ -23,7 +23,7 @@ type VoucherTemplateRow = {
 };
 
 function fallbackList() {
-  return FALLBACK_MERCHANTS.map((merchant) => {
+  return FALLBACK_MERCHANTS.filter((m) => m.name === "Leshan Group").map((merchant) => {
     const vouchersAvailable = FALLBACK_VOUCHER_TEMPLATES.filter(
       (template) =>
         template.merchant_id === merchant.id &&
@@ -64,6 +64,7 @@ export async function GET() {
     const { data: merchants, error: merchantErr } = await supabase
       .from("spend_merchants")
       .select("id, slug, name, country, image_key, image_url")
+      .eq("name", "Leshan Group")
       .order("name", { ascending: true });
 
     if (merchantErr || !merchants || merchants.length === 0) {
