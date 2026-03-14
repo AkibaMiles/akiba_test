@@ -1,0 +1,3 @@
+# AkibaDice imports a non-existent witnet path (IWitnetRandomness vs IWitRandomness).
+# Excluded here so the claw game contracts can compile independently.
+contracts/AkibaDice.sol

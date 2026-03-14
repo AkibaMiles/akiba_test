@@ -3,6 +3,7 @@ import "@/styles/style.css";
 import localFont from "next/font/local";
 
 import { AppProvider } from '@/providers/AppProvider';
+import { Toaster } from "@/components/ui/sonner";
 
 const sterling = localFont({
   src: [
@@ -39,6 +40,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${sterling.variable}`}>
         <AppProvider>{children}</AppProvider>
+        <Toaster position="top-center" richColors />
       </body>
     </html>
   );
