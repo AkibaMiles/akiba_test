@@ -123,6 +123,7 @@ export default function VoucherOrderSheet({
   const [recipientName, setRecipientName] = useState("");
   const [phone9, setPhone9] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
+  const [otherArea, setOtherArea] = useState("");
   const [locationDetails, setLocationDetails] = useState("");
 
   const [processing, setProcessing] = useState(false);
@@ -148,6 +149,7 @@ export default function VoucherOrderSheet({
     setRecipientName("");
     setPhone9("");
     setSelectedCity("");
+    setOtherArea("");
     setLocationDetails("");
     setOrderId(null);
     setMilesEarned(null);
@@ -308,7 +310,7 @@ export default function VoucherOrderSheet({
           voucher_id: selectedVoucher?.id ?? null,
           recipient_name: recipientName.trim(),
           phone: `+254${phone9}`,
-          city: selectedCityLabel,
+          city: selectedCity === "Other" ? (otherArea.trim() || "Other / Rural area") : selectedCityLabel,
           location_details: locationDetails.trim() || null,
           delivery_fee_tx_hash: hash,
           user_address: address,
@@ -589,7 +591,7 @@ export default function VoucherOrderSheet({
               </div>
 
               <p className="text-xl font-semibold mb-1">Delivery details</p>
-              <p className="text-sm text-gray-500 mb-4">Kenya delivery only. Major cities are $3, rural delivery is $5.</p>
+              <p className="text-sm text-gray-500 mb-4">Kenya only. Major cities $3 (1–2 days), other towns $5 (3–5 days).</p>
 
               <div className="space-y-3 mb-6">
                 <div>
@@ -618,41 +620,94 @@ export default function VoucherOrderSheet({
                   </div>
                 </div>
 
+                {/* City picker */}
                 <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1">Delivery city</label>
-                  <select
-                    value={selectedCity}
-                    onChange={(e) => setSelectedCity(e.target.value)}
-                    className="flex h-[48px] w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    <option value="">Select your city</option>
-                    {CITY_OPTIONS.map((group) => (
-                      <optgroup key={group.group} label={group.group}>
-                        {group.cities.map((city) => (
-                          <option key={city} value={city}>
-                            {formatCityLabel(city)}
-                          </option>
-                        ))}
-                      </optgroup>
+                  <label className="text-sm font-medium text-gray-700 block mb-3">Delivery location</label>
+
+                  {/* Major cities */}
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Major cities</p>
+                    <span className="text-xs text-[#238D9D] font-medium">$3.00 · 1–2 days</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mb-4">
+                    {["Nairobi", "Mombasa"].map((city) => (
+                      <button
+                        key={city}
+                        type="button"
+                        onClick={() => { setSelectedCity(city); setOtherArea(""); }}
+                        className={`rounded-xl border-2 py-3 text-sm font-medium transition-colors ${
+                          selectedCity === city
+                            ? "border-[#238D9D] bg-[#238D9D0D] text-[#238D9D]"
+                            : "border-gray-200 text-gray-700"
+                        }`}
+                      >
+                        {city}
+                      </button>
                     ))}
-                  </select>
+                  </div>
+
+                  {/* Other towns */}
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Other towns</p>
+                    <span className="text-xs text-gray-500 font-medium">$5.00 · 3–5 days</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {["Kisumu", "Nakuru", "Eldoret", "Thika", "Nyeri", "Meru", "Kisii", "Malindi", "Kitale", "Garissa"].map((city) => (
+                      <button
+                        key={city}
+                        type="button"
+                        onClick={() => { setSelectedCity(city); setOtherArea(""); }}
+                        className={`rounded-xl border-2 py-2.5 text-xs font-medium transition-colors ${
+                          selectedCity === city
+                            ? "border-[#238D9D] bg-[#238D9D0D] text-[#238D9D]"
+                            : "border-gray-200 text-gray-700"
+                        }`}
+                      >
+                        {city}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCity("Other")}
+                      className={`rounded-xl border-2 py-2.5 text-xs font-medium transition-colors ${
+                        selectedCity === "Other"
+                          ? "border-[#238D9D] bg-[#238D9D0D] text-[#238D9D]"
+                          : "border-gray-200 text-gray-700"
+                      }`}
+                    >
+                      Other
+                    </button>
+                  </div>
+
+                  {/* Other area text field */}
+                  {selectedCity === "Other" && (
+                    <Input
+                      placeholder="Your town or area e.g. Bungoma, Homa Bay…"
+                      value={otherArea}
+                      onChange={(e) => setOtherArea(e.target.value)}
+                      className="rounded-xl h-[48px] mt-3"
+                    />
+                  )}
                 </div>
 
-                <div className="rounded-xl border border-[#238D9D1F] bg-[#238D9D0D] p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-black">Delivery fee</p>
-                      <p className="text-xs text-gray-500">
-                        {selectedCity
-                          ? `${selectedCityLabel} qualifies for ${deliveryFeeDisplay} delivery.`
-                          : "Choose a city to see the delivery fee."}
-                      </p>
+                {/* Delivery fee summary — only shown once city is selected */}
+                {selectedCity && (
+                  <div className="rounded-xl border border-[#238D9D1F] bg-[#238D9D0D] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-black">Delivery fee</p>
+                        <p className="text-xs text-gray-500">
+                          {selectedCity === "Other"
+                            ? "Rural / out-of-town delivery"
+                            : `${selectedCityLabel} delivery`}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-[#238D9D]">
+                        {deliveryFeeDisplay}
+                      </span>
                     </div>
-                    <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-[#238D9D]">
-                      {selectedCity ? deliveryFeeDisplay : "Pick city"}
-                    </span>
                   </div>
-                </div>
+                )}
 
                 <div>
                   <label className="text-sm font-medium text-gray-700 block mb-1">
@@ -670,7 +725,12 @@ export default function VoucherOrderSheet({
 
               <Button
                 className="w-full rounded-xl bg-[#238D9D] text-white h-[56px] font-medium text-lg"
-                disabled={!recipientName.trim() || phone9.length !== 9 || !selectedCity.trim()}
+                disabled={
+                  !recipientName.trim() ||
+                  phone9.length !== 9 ||
+                  !selectedCity.trim() ||
+                  (selectedCity === "Other" && !otherArea.trim())
+                }
                 onClick={() => setStep("payment")}
                 title="Next"
               >
@@ -716,8 +776,10 @@ export default function VoucherOrderSheet({
                   <span className="font-medium">+254{phone9}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">City</span>
-                  <span className="font-medium">{selectedCityLabel}</span>
+                  <span className="text-gray-600">Location</span>
+                  <span className="font-medium">
+                    {selectedCity === "Other" ? (otherArea.trim() || "Other / Rural area") : selectedCityLabel}
+                  </span>
                 </div>
                 {locationDetails.trim() ? (
                   <div className="flex justify-between gap-4">
