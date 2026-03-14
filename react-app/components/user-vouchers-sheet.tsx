@@ -7,6 +7,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "./ui/sheet";
 import { Button } from "./ui/button";
 import { CaretLeft, Copy, Share } from "@phosphor-icons/react";
 import { copyTextRobust } from "@/lib/clipboard";
+import VoucherOrderSheet from "./voucher-order-sheet";
 
 type UserVoucher = {
   id: string;
@@ -17,6 +18,7 @@ type UserVoucher = {
   status: string;
   rules_snapshot: string[];
   created_at: string;
+  merchant_id: string;
   merchant_name: string;
   voucher_title: string;
   miles_cost: number | null;
@@ -42,6 +44,7 @@ export default function UserVouchersSheet({ open, onOpenChange, address }: Props
   const [selected, setSelected] = useState<UserVoucher | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [orderSheetOpen, setOrderSheetOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -101,6 +104,7 @@ export default function UserVouchersSheet({ open, onOpenChange, address }: Props
   };
 
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
@@ -153,6 +157,14 @@ export default function UserVouchersSheet({ open, onOpenChange, address }: Props
                 View burn transaction <Share size={18} />
               </Link>
             ) : null}
+
+            {selected.status === "issued" && (
+              <Button
+                    className="w-full rounded-xl bg-[#238D9D] text-white font-medium text-lg h-[56px]"
+                    onClick={() => setOrderSheetOpen(true)} title={"Order goods"}              >
+                Order goods
+              </Button>
+            )}
 
             <Button
               className="w-full rounded-xl bg-[#238D9D1A] text-[#238D9D] py-4 font-medium text-lg h-[56px]"
@@ -221,5 +233,22 @@ export default function UserVouchersSheet({ open, onOpenChange, address }: Props
         )}
       </SheetContent>
     </Sheet>
+
+    <VoucherOrderSheet
+      open={orderSheetOpen}
+      onOpenChange={setOrderSheetOpen}
+      voucher={
+        selected
+          ? {
+              id: selected.id,
+              merchant_id: selected.merchant_id,
+              merchant_name: selected.merchant_name,
+              voucher_title: selected.voucher_title,
+              status: selected.status,
+            }
+          : null
+      }
+    />
+    </>
   );
 }

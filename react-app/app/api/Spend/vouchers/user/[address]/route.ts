@@ -27,6 +27,10 @@ type TemplateRow = {
   id: string;
   title: string;
   miles_cost: number;
+  voucher_type: string | null;
+  discount_percent: number | null;
+  applicable_category: string | null;
+  discount_cusd: number | null;
 };
 
 function isEthAddress(value: string) {
@@ -70,7 +74,7 @@ export async function GET(_req: Request, { params }: RouteContext) {
         supabase.from("partners").select("id, name").in("id", merchantIds),
         supabase
           .from("spend_voucher_templates")
-          .select("id, title, miles_cost")
+          .select("id, title, miles_cost, voucher_type, discount_percent, applicable_category, discount_cusd")
           .in("id", templateIds),
       ]);
 
@@ -113,6 +117,10 @@ export async function GET(_req: Request, { params }: RouteContext) {
           merchant_name: partner?.name ?? "Merchant",
           voucher_title: template?.title ?? "Voucher",
           miles_cost: template?.miles_cost ?? null,
+          voucher_type: template?.voucher_type ?? "free",
+          discount_percent: template?.discount_percent ?? null,
+          applicable_category: template?.applicable_category ?? null,
+          discount_cusd: template?.discount_cusd ?? null,
         };
       }),
     });

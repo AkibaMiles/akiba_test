@@ -13,6 +13,7 @@ import {
   parseEther,
   formatUnits,
   parseUnits,
+  erc20Abi,
 } from "viem";
 import { celo } from "viem/chains";
 import StableTokenABI from "@/contexts/cusd-abi.json";
@@ -130,6 +131,35 @@ export function useWeb3() {
     },
     [walletClient, address, publicClient]
   );
+
+  const sendToken = useCallback(
+    async (tokenAddress: string, decimals: number, to: string, amount: string) => {
+      if (!walletClient || !address) throw new Error("Wallet not ready");
+      const tx = await walletClient.writeContract({
+        address: tokenAddress as `0x${string}`,
+        abi: erc20Abi,
+        functionName: "transfer",
+        account: address,
+        args: [to as `0x${string}`, parseUnits(amount, decimals)],
+      });
+      return publicClient.waitForTransactionReceipt({ hash: tx });
+    },
+    [walletClient, address, publicClient]
+  );
+
+  const getStableBalances = useCallback(async (): Promise<{ cusd: number; usdt: number }> => {
+    if (!address) return { cusd: 0, usdt: 0 };
+    const CUSD = "0x765de816845861e75a25fca122bb6898b8b1282a" as `0x${string}`;
+    const USDT = "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e" as `0x${string}`;
+    const [cusdRaw, usdtRaw] = await Promise.all([
+      publicClient.readContract({ address: CUSD, abi: erc20Abi, functionName: "balanceOf", args: [address as `0x${string}`] }),
+      publicClient.readContract({ address: USDT, abi: erc20Abi, functionName: "balanceOf", args: [address as `0x${string}`] }),
+    ]);
+    return {
+      cusd: Number(cusdRaw as bigint) / 1e18,
+      usdt: Number(usdtRaw as bigint) / 1e6,
+    };
+  }, [address, publicClient]);
 
  // in src/contexts/useWeb3.ts
  // 2️⃣ joinRaffle writes directly
@@ -582,5 +612,7 @@ const getDicePlayerStats = useCallback(
     getLastResolvedRoundForPlayer,
     burnAkibaMiles,
     signVoucherIssueProof,
+    sendToken,
+    getStableBalances,
   };
 }

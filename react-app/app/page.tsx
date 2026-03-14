@@ -5,6 +5,8 @@ import ReferFab from "@/components/refer-fab";
 import DailyChallenges from "@/components/daily-challenge";
 import DashboardHeader from "@/components/dashboard-header";
 import UserVouchersSheet from "@/components/user-vouchers-sheet";
+import MerchantShopSheet from "@/components/merchant-shop-sheet";
+import UserOrdersSheet from "@/components/user-orders-sheet";
 import { RaffleCard } from "@/components/raffle-card";
 import PointsCard from "@/components/points-card";
 import { useWeb3 } from "@/contexts/useWeb3";
@@ -251,6 +253,8 @@ export default function Home() {
 
   const [akibaMilesBalance, setakibaMilesBalance] = useState("0");
   const [vouchersOpen, setVouchersOpen] = useState(false);
+  const [merchantShopOpen, setMerchantShopOpen] = useState(false);
+  const [ordersOpen, setOrdersOpen] = useState(false);
   const [tokenRaffles, setTokenRaffles] = useState<TokenRaffleWithWinners[]>([]);
   const [physicalRaffles, setPhysicalRaffles] = useState<PhysicalRaffle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -618,9 +622,22 @@ const badgeButtonLabel =
         address={address}
       />
 
+      <MerchantShopSheet
+        open={merchantShopOpen}
+        onOpenChange={setMerchantShopOpen}
+      />
+
+      <UserOrdersSheet
+        open={ordersOpen}
+        onOpenChange={setOrdersOpen}
+        address={address}
+      />
+
       <DashboardHeader
         name={headerName}
         onOpenVouchers={() => setVouchersOpen(true)}
+        onOpenShop={() => setMerchantShopOpen(true)}
+        onOpenOrders={() => setOrdersOpen(true)}
       />
       <PointsCard points={Number(akibaMilesBalance)} />
 

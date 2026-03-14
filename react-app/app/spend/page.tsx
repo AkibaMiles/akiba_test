@@ -10,7 +10,7 @@ import { RaffleDetails } from '@/components/raffle-details';
 import { SectionHeading } from '@/components/section-heading';
 import SpendPartnerQuestSheet from '@/components/spend-partner-quest-sheet';
 import SuccessModal from '@/components/success-modal';
-import MerchantVoucherSheet from '@/components/merchant-voucher-sheet';
+import MerchantActionsSheet from '@/components/merchant-actions-sheet';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useWeb3 } from '@/contexts/useWeb3';
@@ -152,7 +152,7 @@ const Page = () => {
   const [openSuccess, setOpenSuccess] = useState(false);
   const [merchants, setMerchants] = useState<SpendMerchant[]>([]);
   const [selectedMerchant, setSelectedMerchant] = useState<SpendMerchant | null>(null);
-  const [merchantSheetOpen, setMerchantSheetOpen] = useState(false);
+  const [merchantActionsOpen, setMerchantActionsOpen] = useState(false);
 
 
   useEffect(() => {
@@ -325,7 +325,7 @@ const Page = () => {
               locked={false}
               onClick={() => {
                 setSelectedMerchant(merchant);
-                setMerchantSheetOpen(true);
+                setMerchantActionsOpen(true);
               }}
             />
           ))}
@@ -423,13 +423,13 @@ const Page = () => {
   />
 )}
 
-<MerchantVoucherSheet
-  open={merchantSheetOpen}
+<MerchantActionsSheet
+  open={merchantActionsOpen}
   onOpenChange={(open) => {
-    setMerchantSheetOpen(open);
+    setMerchantActionsOpen(open);
     if (!open) setSelectedMerchant(null);
   }}
-  merchantSlug={selectedMerchant?.slug ?? null}
+  merchant={selectedMerchant}
   image={selectedMerchant ? pickMerchantImage(selectedMerchant) : MERCHANT_IMAGES.default}
 />
 
