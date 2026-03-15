@@ -42,6 +42,40 @@
     "type": "function"
   },
   {
+    "inputs": [
+      { "name": "sessionId",   "type": "uint256",   "internalType": "uint256"   },
+      { "name": "rewardClass", "type": "uint8",     "internalType": "uint8"     },
+      { "name": "proof",       "type": "bytes32[]", "internalType": "bytes32[]" }
+    ],
+    "name": "commitOutcome",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "name": "batchId",       "type": "uint256", "internalType": "uint256" },
+      { "name": "merkleRoot",    "type": "bytes32", "internalType": "bytes32" },
+      { "name": "totalPlays",    "type": "uint256", "internalType": "uint256" },
+      { "name": "losesLeft",     "type": "uint256", "internalType": "uint256" },
+      { "name": "commonsLeft",   "type": "uint256", "internalType": "uint256" },
+      { "name": "raresLeft",     "type": "uint256", "internalType": "uint256" },
+      { "name": "epicsLeft",     "type": "uint256", "internalType": "uint256" },
+      { "name": "legendarysLeft","type": "uint256", "internalType": "uint256" }
+    ],
+    "name": "openBatch",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "name": "batchId", "type": "uint256", "internalType": "uint256" }],
+    "name": "closeBatch",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "anonymous": false,
     "inputs": [
       { "indexed": true,  "name": "batchId",    "type": "uint256", "internalType": "uint256" },
@@ -57,6 +91,17 @@
       { "indexed": true, "name": "batchId", "type": "uint256", "internalType": "uint256" }
     ],
     "name": "BatchClosed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true,  "name": "sessionId",   "type": "uint256", "internalType": "uint256" },
+      { "indexed": true,  "name": "batchId",     "type": "uint256", "internalType": "uint256" },
+      { "indexed": false, "name": "playIndex",   "type": "uint256", "internalType": "uint256" },
+      { "indexed": false, "name": "rewardClass", "type": "uint8",   "internalType": "uint8"   }
+    ],
+    "name": "OutcomeCommitted",
     "type": "event"
   }
 ]

@@ -85,6 +85,14 @@ export default function ClawPage() {
 
   // ── Derived: most-actionable session ──────────────────────────────────────
   const activeSession = useMemo<ClawSessionView | null>(() => {
+    // Voucher sessions need user action (burn) even after claim
+    const claimedVoucher = sessions.find(
+      (s) => s.status === "claimed" && (s.rewardClass === "rare" || s.rewardClass === "legendary"),
+    );
+    if (claimedVoucher) return claimedVoucher;
+    // Show the most recent claimed result briefly
+    const recentClaimed = sessions.find((s) => s.status === "claimed");
+    if (recentClaimed) return recentClaimed;
     const settled = sessions.find((s) => s.status === "settled");
     if (settled) return settled;
     const ready   = sessions.find((s) => s.status === "pending" && s.canSettle);
@@ -97,6 +105,7 @@ export default function ClawPage() {
     if (actionLoading === "start")                    return "starting";
     if (actionLoading?.startsWith("settle-"))         return "settling";
     if (!activeSession)                               return "idle";
+    if (activeSession.status === "claimed")           return "settled";
     if (activeSession.status === "settled")           return "settled";
     if (activeSession.canSettle)                      return "ready";
     return "pending";
@@ -124,9 +133,13 @@ export default function ClawPage() {
     return usdtBalance >= cost;
   }, [selectedConfig, milesBalance, usdtBalance]);
 
-  // ── Session badge count — all unresolved sessions ────────────────────────
+  // ── Session badge count — sessions needing attention ─────────────────────
   const urgentCount = useMemo(
-    () => sessions.filter((s) => s.status === "settled" || s.status === "pending").length,
+    () => sessions.filter((s) =>
+      s.status === "pending" ||
+      s.status === "settled" ||
+      (s.status === "claimed" && (s.rewardClass === "rare" || s.rewardClass === "legendary")),
+    ).length,
     [sessions],
   );
 
@@ -265,6 +278,18 @@ export default function ClawPage() {
       );
 
       setSessions(hydrated);
+
+      // Auto-retry any pending sessions that haven't been committed yet
+      // (catches sessions started before the settle API was wired, or after a hiccup)
+      for (const s of hydrated) {
+        if (s.status === "pending" && !s.canSettle) {
+          void fetch("/api/claw/settle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId: s.sessionId.toString() }),
+          });
+        }
+      }
     } catch (err: any) {
       console.error("[ClawPage] load failed", err);
       // silent – don't spam toasts on background polling errors
@@ -328,21 +353,18 @@ export default function ClawPage() {
       const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 1, timeout: 120_000 });
       toast.success("🎰 Claw in motion — revealing prize…");
 
-      // Parse sessionId from GameStarted log in the receipt, then fire settle
-      const { decodeEventLog, parseAbi: pa } = await import("viem");
-      const gameStartedTopic = pa(["event GameStarted(uint256 indexed sessionId, address indexed player, uint8 indexed tierId, uint256 playCost, uint256 requestBlock)"]);
-      const startedLog = receipt.logs.find(l => l.address.toLowerCase() === CLAW_GAME_ADDRESS.toLowerCase());
-      if (startedLog) {
-        try {
-          const decoded = decodeEventLog({ abi: gameStartedTopic, data: startedLog.data, topics: startedLog.topics });
-          const newSessionId = (decoded.args as any).sessionId as bigint;
+      // Parse GameStarted log from the receipt and fire the settle API
+      try {
+        const { parseEventLogs } = await import("viem");
+        const [startedEvent] = parseEventLogs({ abi: gameStartedAbi, logs: receipt.logs });
+        if (startedEvent?.args?.sessionId != null) {
           void fetch("/api/claw/settle", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionId: newSessionId.toString() }),
+            body: JSON.stringify({ sessionId: startedEvent.args.sessionId.toString() }),
           });
-        } catch { /* not a GameStarted log — ignore */ }
-      }
+        }
+      } catch { /* parsing failed — cron will retry */ }
 
       await loadGame();
     } catch (err: any) {
@@ -453,8 +475,8 @@ export default function ClawPage() {
           />
         </div>
 
-        {/* ── Active session banner (only when action is available) ── */}
-        {activeSession && (gameState === "ready" || gameState === "settled" || gameState === "settling") && (
+        {/* ── Active session banner ── */}
+        {activeSession && (gameState === "ready" || gameState === "settled" || gameState === "settling" || gameState === "pending") && (
           <div className="mt-2">
             <ClawActionBanner
               session={activeSession}

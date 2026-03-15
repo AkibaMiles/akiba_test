@@ -267,7 +267,7 @@ contract AkibaClawGame is
             rareWeight:           600,
             epicWeight:           180,
             legendaryWeight:       20,
-            commonMilesReward:   50e18,
+            commonMilesReward:   100e18,  // 2× play cost
             rareBurnMiles:       50e18,   // 1× play cost
             epicUsdtReward:       1e6,    // 1 USDT
             legendaryBurnUsdt:    3e6,    // 3 USDT
@@ -290,7 +290,7 @@ contract AkibaClawGame is
             rareWeight:          1000,
             epicWeight:           400,
             legendaryWeight:      100,
-            commonMilesReward:   150e18,
+            commonMilesReward:   300e18,  // 2× play cost
             rareBurnMiles:       300e18,   // 2× play cost
             epicUsdtReward:        2e6,    // 2 USDT
             legendaryBurnUsdt:     5e6,    // 5 USDT
@@ -441,13 +441,15 @@ contract AkibaClawGame is
     ///         - Rare:      20% merchant voucher issued (can still burn afterward)
     ///         - Epic:      USDT transferred from reward vault
     ///         - Legendary: 100%-capped merchant voucher issued (can still burn afterward)
+    /// @notice Claim the settled reward. Permissionless — reward always goes to session.player.
+    ///         The relayer auto-calls this after settlement so players need no extra tx.
     function claimReward(uint256 sessionId) external nonReentrant whenNotPaused {
         GameSession storage session = _sessions[sessionId];
         if (session.sessionId == 0)                   revert SessionNotFound(sessionId);
-        if (session.player != msg.sender)              revert NotPlayer(msg.sender);
         if (session.status != SessionStatus.Settled)  revert WrongStatus(session.status);
 
-        session.status = SessionStatus.Claimed;
+        session.status   = SessionStatus.Claimed;
+        address player   = session.player;
 
         TierConfig  storage tier = _tiers[session.tierId];
         RewardClass rc           = session.rewardClass;
@@ -455,16 +457,16 @@ contract AkibaClawGame is
         if (rc == RewardClass.Lose) {
             // nothing distributed
         } else if (rc == RewardClass.Common) {
-            miles.mint(msg.sender, session.rewardAmount);
+            miles.mint(player, session.rewardAmount);
         } else if (rc == RewardClass.Epic) {
-            rewardVault.pay(msg.sender, session.rewardAmount);
+            rewardVault.pay(player, session.rewardAmount);
         } else if (rc == RewardClass.Rare || rc == RewardClass.Legendary) {
             uint256 vId = _issueVoucher(session, tier);
             session.voucherId = vId;
-            emit VoucherIssued(vId, sessionId, msg.sender);
+            emit VoucherIssued(vId, sessionId, player);
         }
 
-        emit RewardClaimed(sessionId, msg.sender, rc);
+        emit RewardClaimed(sessionId, player, rc);
     }
 
     /* ─────────────────────────── User: burnVoucherReward ───────────────────── */

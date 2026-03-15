@@ -3,21 +3,26 @@
  *
  * Called by the frontend immediately after startGame() confirms.
  * Reads the pre-committed outcome from Supabase, generates a Merkle proof,
- * and calls commitOutcome() on MerkleBatchRng via the relayer key.
- * MerkleBatchRng then auto-calls settleGame(), resolving the session in one tx.
+ * calls commitOutcome() on MerkleBatchRng (which auto-calls settleGame()),
+ * then immediately calls claimReward() on AkibaClawGame.
+ * Users only need to sign startGame() — everything else is relayer-driven.
  */
 
 import { NextResponse } from "next/server";
-import { createPublicClient, createWalletClient, http } from "viem";
+import { createPublicClient, createWalletClient, http, type Abi } from "viem";
 import { celo } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { StandardMerkleTree } from "@openzeppelin/merkle-tree";
 import { supabase } from "@/lib/supabaseClient";
 import batchRngArtifact from "@/contexts/merkleBatchRng.json";
+import clawGameArtifactRaw from "@/contexts/akibaClawGame.json";
+
+const clawGameArtifact = clawGameArtifactRaw.abi as unknown as Abi;
 
 /* ─── Config ──────────────────────────────────────────────────────────────── */
 
 const BATCH_RNG_ADDRESS = (process.env.NEXT_PUBLIC_BATCH_RNG_ADDRESS ?? "") as `0x${string}`;
+const CLAW_GAME_ADDRESS = (process.env.NEXT_PUBLIC_CLAW_GAME_ADDRESS  ?? "") as `0x${string}`;
 const CELO_RPC_URL      = process.env.CELO_RPC_URL ?? "https://forno.celo.org";
 const RELAYER_PK        = process.env.CELO_RELAYER_PK;
 
@@ -45,6 +50,9 @@ export async function POST(req: Request) {
 
     if (!BATCH_RNG_ADDRESS)
       return NextResponse.json({ error: "BATCH_RNG not configured" }, { status: 500 });
+
+    if (!CLAW_GAME_ADDRESS)
+      return NextResponse.json({ error: "CLAW_GAME not configured" }, { status: 500 });
 
     const { wallet, pub, account } = getClients();
     const sid = BigInt(sessionId);
@@ -83,7 +91,7 @@ export async function POST(req: Request) {
     console.log(`[claw/settle] session=${sid} playIndex=${playIndex} outcome=${RC_NAMES[rewardClass]}`);
 
     // 4. Call commitOutcome — MerkleBatchRng auto-calls settleGame() on success
-    const hash = await wallet.writeContract({
+    const settleHash = await wallet.writeContract({
       address: BATCH_RNG_ADDRESS,
       abi: batchRngArtifact,
       functionName: "commitOutcome",
@@ -91,11 +99,22 @@ export async function POST(req: Request) {
       account,
     });
 
-    // Wait for 1 confirmation so the frontend's next loadGame() sees the settled state
-    await pub.waitForTransactionReceipt({ hash, confirmations: 1 });
+    await pub.waitForTransactionReceipt({ hash: settleHash, confirmations: 1 });
+    console.log(`[claw/settle] ✓ session=${sid} settled as ${RC_NAMES[rewardClass]} tx=${settleHash}`);
 
-    console.log(`[claw/settle] ✓ session=${sid} settled as ${RC_NAMES[rewardClass]} tx=${hash}`);
-    return NextResponse.json({ hash, rewardClass, outcome: RC_NAMES[rewardClass] });
+    // 5. Auto-claim — relayer calls claimReward so the user doesn't need to
+    const claimHash = await wallet.writeContract({
+      address: CLAW_GAME_ADDRESS,
+      abi: clawGameArtifact,
+      functionName: "claimReward",
+      args: [sid],
+      account,
+    });
+
+    await pub.waitForTransactionReceipt({ hash: claimHash, confirmations: 1 });
+    console.log(`[claw/settle] ✓ session=${sid} claimed tx=${claimHash}`);
+
+    return NextResponse.json({ hash: settleHash, claimHash, rewardClass, outcome: RC_NAMES[rewardClass] });
 
   } catch (err: any) {
     console.error("[claw/settle]", err);

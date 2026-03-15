@@ -17,6 +17,10 @@ import { StandardMerkleTree } from "@openzeppelin/merkle-tree";
 import * as crypto from "crypto";
 import { supabase } from "@/lib/supabaseClient";
 import batchRngArtifact from "@/contexts/merkleBatchRng.json";
+import clawGameArtifactRaw from "@/contexts/akibaClawGame.json";
+import type { Abi } from "viem";
+
+const clawGameArtifact = clawGameArtifactRaw.abi as unknown as Abi;
 
 /* ─── Config ──────────────────────────────────────────────────────────────── */
 
@@ -40,6 +44,34 @@ const bigintReplacer = (_k: string, v: unknown) => typeof v === "bigint" ? v.toS
 const gameStartedAbi = parseAbi([
   "event GameStarted(uint256 indexed sessionId, address indexed player, uint8 indexed tierId, uint256 playCost, uint256 requestBlock)",
 ]);
+
+const clawGameMiniAbi = [
+  {
+    name: "getSession",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "sessionId", type: "uint256" }],
+    outputs: [{ name: "", type: "tuple", components: [
+      { name: "sessionId",   type: "uint256" },
+      { name: "player",      type: "address" },
+      { name: "tierId",      type: "uint8"   },
+      { name: "status",      type: "uint8"   },
+      { name: "createdAt",   type: "uint256" },
+      { name: "settledAt",   type: "uint256" },
+      { name: "requestBlock",type: "uint256" },
+      { name: "rewardClass", type: "uint8"   },
+      { name: "rewardAmount",type: "uint256" },
+      { name: "voucherId",   type: "uint256" },
+    ]}],
+  },
+  {
+    name: "claimReward",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "sessionId", type: "uint256" }],
+    outputs: [],
+  },
+] as const;
 
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -194,9 +226,55 @@ export async function GET() {
         });
         await pub.waitForTransactionReceipt({ hash, confirmations: 1 });
         info(`Retried session ${sessionId} → ${RC_NAMES[rewardClass]} tx=${hash}`);
+
+        // Auto-claim after settling
+        try {
+          const claimHash = await relayerWallet.writeContract({
+            address: CLAW_GAME_ADDRESS,
+            abi: clawGameArtifact,
+            functionName: "claimReward",
+            args: [sessionId],
+            account: relayerAccount,
+          });
+          await pub.waitForTransactionReceipt({ hash: claimHash, confirmations: 1 });
+          info(`  Claimed session ${sessionId} tx=${claimHash}`);
+        } catch (claimErr: any) {
+          info(`  ⚠ claimReward failed for ${sessionId}: ${claimErr?.shortMessage ?? claimErr?.message}`);
+        }
+
         retried++;
       }
       if (retried === 0) info("No pending sessions to retry");
+
+      // ── 4. Claim any settled-but-unclaimed sessions from the last 200 blocks ──
+      let claimed = 0;
+      for (const log of logs) {
+        const sessionId = log.args.sessionId;
+        if (!sessionId) continue;
+
+        const session = await pub.readContract({
+          address: CLAW_GAME_ADDRESS,
+          abi: clawGameMiniAbi,
+          functionName: "getSession",
+          args: [sessionId],
+        }) as { status: number };
+
+        if (session.status !== 2) continue; // 2 = Settled
+
+        try {
+          const claimHash = await relayerWallet.writeContract({
+            address: CLAW_GAME_ADDRESS,
+            abi: clawGameArtifact,
+            functionName: "claimReward",
+            args: [sessionId],
+            account: relayerAccount,
+          });
+          await pub.waitForTransactionReceipt({ hash: claimHash, confirmations: 1 });
+          info(`Claimed settled session ${sessionId} tx=${claimHash}`);
+          claimed++;
+        } catch { /* already claimed or in wrong state */ }
+      }
+      if (claimed === 0) info("No settled-unclaimed sessions found");
     }
 
     return NextResponse.json({ ok: true, log });
