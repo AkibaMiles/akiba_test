@@ -26,12 +26,23 @@ const config: HardhatUserConfig = {
       accounts: [process.env.PRIVATE_KEY ?? '0x0000000000000000000000000000000000000000000000000000000000000001'],
       url: 'https://forno.celo.org',
     },
+    optimism: {
+      accounts: [process.env.PRIVATE_KEY ?? '0x0000000000000000000000000000000000000000000000000000000000000001'],
+      url: process.env.OP_RPC_URL ?? 'https://mainnet.optimism.io',
+    },
+    optimismSepolia: {
+      accounts: [process.env.PRIVATE_KEY ?? '0x0000000000000000000000000000000000000000000000000000000000000001'],
+      url: 'https://sepolia.optimism.io',
+    },
 
-    
   },
   etherscan: {
-    apiKey:  process.env.CELOSCAN_API_KEY ?? '',
-     
+    apiKey: {
+      celo:            process.env.CELOSCAN_API_KEY   ?? '',
+      celoSepolia:     process.env.CELOSCAN_API_KEY   ?? '',
+      optimism:        process.env.OPSCAN_API_KEY      ?? '',
+      optimismSepolia: process.env.OPSCAN_API_KEY      ?? '',
+    },
     customChains: [
       {
         chainId: 11142220,
@@ -49,7 +60,22 @@ const config: HardhatUserConfig = {
           browserURL: 'https://celoscan.io/',
         },
       },
-    
+      {
+        chainId: 10,
+        network: 'optimism',
+        urls: {
+          apiURL: 'https://api-optimistic.etherscan.io/api',
+          browserURL: 'https://optimistic.etherscan.io/',
+        },
+      },
+      {
+        chainId: 11155420,
+        network: 'optimismSepolia',
+        urls: {
+          apiURL: 'https://api-sepolia-optimistic.etherscan.io/api',
+          browserURL: 'https://sepolia-optimistic.etherscan.io/',
+        },
+      },
     ],
   },
   sourcify: {

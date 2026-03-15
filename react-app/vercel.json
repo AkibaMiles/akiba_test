@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/claw/rotate",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

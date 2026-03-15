@@ -8,7 +8,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
-import {IWitRandomnessLegacy as IWitnetRandomness} from "@witnet/solidity/contracts/interfaces/legacy/IWitRandomnessLegacy.sol";
+import {IClawRng} from "./IClawRng.sol";
 import {IMiniPoints} from "../MiniPoints.sol";
 
 /* ─────────────────────────────── Interfaces ──────────────────────────────── */
@@ -141,7 +141,7 @@ contract AkibaClawGame is
 
     /* ─────────────────────────── State ─────────────────────────────────────── */
 
-    IWitnetRandomness public rng;
+    IClawRng public rng;
     IMiniPoints           public miles;
     IERC20                public usdt;
     IAkibaRewardVault     public rewardVault;
@@ -210,7 +210,7 @@ contract AkibaClawGame is
     error LegendaryCooldownActive(uint256 unlocksAt);
     error SessionNotFound(uint256 sessionId);
     error WrongStatus(SessionStatus current);
-    error RandomnessNotReady(uint256 requestBlock);
+    error RandomnessNotReady(uint256 sessionId);
     error NotPlayer(address caller);
 
     /* ─────────────────────────── Initializer ───────────────────────────────── */
@@ -237,7 +237,7 @@ contract AkibaClawGame is
         __Pausable_init();
         __ReentrancyGuard_init();
 
-        rng              = IWitnetRandomness(_rng);
+        rng              = IClawRng(_rng);
         miles            = IMiniPoints(_miles);
         usdt             = IERC20(_usdt);
         rewardVault      = IAkibaRewardVault(_rewardVault);
@@ -334,7 +334,8 @@ contract AkibaClawGame is
 
     /// @notice Open a claw game session.
     /// @param tierId 0 = Basic, 1 = Boosted, 2 = Premium
-    /// @dev    The Witnet randomness fee is paid from the contract's CELO reserve.
+    /// @dev    A cross-chain Chainlink VRF request is sent via LayerZero to OP Mainnet.
+    ///         The LZ fee is paid from the contract's CELO reserve.
     ///         Players do not need to hold or send any CELO — compatible with MiniPay.
     ///         The owner must maintain a CELO balance in this contract via receive().
     function startGame(uint8 tierId)
@@ -373,12 +374,7 @@ contract AkibaClawGame is
             usdt.safeTransferFrom(msg.sender, address(rewardVault), tier.playCost);
         }
 
-        // Pay the Witnet fee from the contract's CELO reserve (20 % buffer over estimate)
-        uint256 fee = (rng.estimateRandomizeFee(tx.gasprice) * 120) / 100;
-        require(address(this).balance >= fee, "Claw: low CELO reserve");
-        rng.randomize{value: fee}();
-
-        // Create session
+        // Create session first so requestRandom can be keyed to sessionId
         sessionId = nextSessionId++;
         _sessions[sessionId] = GameSession({
             sessionId:    sessionId,
@@ -393,6 +389,11 @@ contract AkibaClawGame is
             voucherId:    0
         });
 
+        // Forward cross-chain VRF request from the contract's CELO reserve
+        uint256 fee = rng.estimateFee();
+        require(address(this).balance >= fee, "Claw: low CELO reserve");
+        rng.requestRandom{value: fee}(sessionId);
+
         unresolvedSessions[msg.sender]++;
 
         emit GameStarted(sessionId, msg.sender, tierId, tier.playCost, block.number);
@@ -400,21 +401,22 @@ contract AkibaClawGame is
 
     /* ─────────────────────────── Permissionless: settleGame ────────────────── */
 
-    /// @notice Settle a pending session once Witnet randomness is available.
+    /// @notice Settle a pending session once cross-chain randomness has arrived.
     ///         Permissionless — any address (keeper, player, or third party) may call.
     function settleGame(uint256 sessionId) external nonReentrant {
         GameSession storage session = _sessions[sessionId];
         if (session.sessionId == 0)                  revert SessionNotFound(sessionId);
         if (session.status != SessionStatus.Pending) revert WrongStatus(session.status);
-        if (!rng.isRandomized(session.requestBlock)) revert RandomnessNotReady(session.requestBlock);
+        if (!rng.isReady(session.sessionId)) revert RandomnessNotReady(session.sessionId);
 
         TierConfig storage tier = _tiers[session.tierId];
 
-        // Roll in [0, TOTAL_WEIGHT − 1]; sessionId as nonce differentiates same-block sessions.
-        // Legacy interface returns uint32; cast to uint256 for band arithmetic.
-        uint256 roll = uint256(rng.random(TOTAL_WEIGHT, session.sessionId, session.requestBlock));
-
-        RewardClass rc = _mapRoll(roll, tier);
+        // Mode A — batch/raffle: operator pre-committed the outcome via Merkle proof.
+        // Mode B — VRF: derive outcome from the random word via weight bands.
+        uint8 committed = rng.getCommittedClass(session.sessionId);
+        RewardClass rc = (committed != 0)
+            ? RewardClass(committed)
+            : _mapRoll(uint256(rng.getRandom(session.sessionId, TOTAL_WEIGHT)), tier);
         uint256     amt = _rewardAmountFor(rc, tier);
 
         session.rewardClass  = rc;
@@ -517,7 +519,7 @@ contract AkibaClawGame is
         GameSession storage s = _sessions[sessionId];
         return s.sessionId != 0
             && s.status == SessionStatus.Pending
-            && rng.isRandomized(s.requestBlock);
+            && rng.isReady(s.sessionId);
     }
 
     /* ─────────────────────────── Admin ─────────────────────────────────────── */
@@ -544,9 +546,9 @@ contract AkibaClawGame is
         voucherRegistry = IAkibaVoucherRegistry(registry);
     }
 
-    function setWitnetRandomness(address _rng) external onlyOwner {
+    function setRng(address _rng) external onlyOwner {
         require(_rng != address(0), "zero addr");
-        rng = IWitnetRandomness(_rng);
+        rng = IClawRng(_rng);
     }
 
     function setMaxUnresolvedPerUser(uint256 max) external onlyOwner {

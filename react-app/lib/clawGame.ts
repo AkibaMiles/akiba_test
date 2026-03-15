@@ -1,4 +1,5 @@
 import clawGameArtifact from "@/contexts/akibaClawGame.json";
+import batchRngArtifact from "@/contexts/merkleBatchRng.json";
 import { formatUnits } from "viem";
 
 export const CLAW_GAME_ADDRESS = (process.env.NEXT_PUBLIC_CLAW_GAME_ADDRESS ?? "") as `0x${string}` | "";
@@ -10,8 +11,11 @@ export const CLAW_USDT_ADDRESS =
   (process.env.NEXT_PUBLIC_CLAW_USDT_ADDRESS ??
     process.env.NEXT_PUBLIC_USDT_ADDRESS ??
     "0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e") as `0x${string}`;
+export const BATCH_RNG_ADDRESS =
+  (process.env.NEXT_PUBLIC_BATCH_RNG_ADDRESS ?? "") as `0x${string}` | "";
 
 export const clawGameAbi = clawGameArtifact.abi;
+export const batchRngAbi = batchRngArtifact;
 
 export type ClawRewardClass =
   | "none"
@@ -49,6 +53,18 @@ export type ClawTierConfig = {
   dailyPlayLimit: bigint;
   legendaryCooldown: bigint;
   defaultMerchantId: `0x${string}`;
+};
+
+export type BatchInventory = {
+  batchId: bigint;
+  loses: bigint;
+  commons: bigint;
+  rares: bigint;
+  epics: bigint;
+  legendarys: bigint;
+  totalRemaining: bigint;
+  totalPlays: bigint;
+  active: boolean;
 };
 
 export type ClawSessionView = {
@@ -149,7 +165,7 @@ export function rewardLabel(rewardClass: ClawRewardClass) {
 export function clawStatusLabel(status: ClawSessionStatus) {
   switch (status) {
     case "pending":
-      return "Waiting for randomness";
+      return "Revealing prize…";
     case "settled":
       return "Ready to claim";
     case "claimed":

@@ -17,6 +17,8 @@ import {
 } from "viem";
 import { useWeb3 } from "@/contexts/useWeb3";
 import {
+  BATCH_RNG_ADDRESS,
+  batchRngAbi,
   CLAW_CHAIN_ID,
   CLAW_DEPLOY_BLOCK,
   CLAW_GAME_ADDRESS,
@@ -25,6 +27,7 @@ import {
   clawGameAbi,
   decodeRewardClass,
   decodeSessionStatus,
+  type BatchInventory,
   type ClawSessionView,
   type ClawTierConfig,
 } from "@/lib/clawGame";
@@ -34,6 +37,7 @@ import { ClawSessionsList } from "@/components/claw/ClawSessionsList";
 import { ClawTierSelector } from "@/components/claw/ClawTierSelector";
 import { ClawMachineDisplay, type ClawGameState } from "@/components/claw/ClawMachineDisplay";
 import { ClawActionBanner } from "@/components/claw/ClawActionBanner";
+import { BatchInventoryBar } from "@/components/claw/BatchInventoryBar";
 
 const clawChain = defineChain({
   id: CLAW_CHAIN_ID,
@@ -59,6 +63,7 @@ export default function ClawPage() {
   const [milesBalance, setMilesBalance]   = useState("0");
   const [usdtBalance, setUsdtBalance]     = useState(0);
   const [sessions, setSessions]           = useState<ClawSessionView[]>([]);
+  const [batchInventory, setBatchInventory] = useState<BatchInventory | null>(null);
   const [loading, setLoading]             = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [infoOpen, setInfoOpen]           = useState(false);
@@ -176,6 +181,30 @@ export default function ClawPage() {
       );
       setTierConfigs(Object.fromEntries(configs));
 
+      // Load batch inventory if MerkleBatchRng is configured
+      if (BATCH_RNG_ADDRESS) {
+        try {
+          const inv = await publicClient.readContract({
+            address: BATCH_RNG_ADDRESS,
+            abi: batchRngAbi,
+            functionName: "getActiveBatchInventory",
+          }) as readonly [bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, boolean];
+          setBatchInventory({
+            batchId:        inv[0],
+            loses:          inv[1],
+            commons:        inv[2],
+            rares:          inv[3],
+            epics:          inv[4],
+            legendarys:     inv[5],
+            totalRemaining: inv[6],
+            totalPlays:     inv[7],
+            active:         inv[8],
+          });
+        } catch {
+          // Batch RNG not deployed yet — silently skip
+        }
+      }
+
       if (!address) { setSessions([]); return; }
 
       const latestBlock = await publicClient.getBlockNumber();
@@ -246,7 +275,7 @@ export default function ClawPage() {
 
   useEffect(() => {
     void loadGame();
-    const id = setInterval(() => { void loadGame(); }, 15000);
+    const id = setInterval(() => { void loadGame(); }, 3000);
     return () => clearInterval(id);
   }, [address]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -296,8 +325,25 @@ export default function ClawPage() {
         account: address as `0x${string}`,
         args: [selectedTier],
       });
-      await publicClient.waitForTransactionReceipt({ hash, confirmations: 1, timeout: 120_000 });
-      toast.success("🎰 Claw session started — oracle resolving…");
+      const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 1, timeout: 120_000 });
+      toast.success("🎰 Claw in motion — revealing prize…");
+
+      // Parse sessionId from GameStarted log in the receipt, then fire settle
+      const { decodeEventLog, parseAbi: pa } = await import("viem");
+      const gameStartedTopic = pa(["event GameStarted(uint256 indexed sessionId, address indexed player, uint8 indexed tierId, uint256 playCost, uint256 requestBlock)"]);
+      const startedLog = receipt.logs.find(l => l.address.toLowerCase() === CLAW_GAME_ADDRESS.toLowerCase());
+      if (startedLog) {
+        try {
+          const decoded = decodeEventLog({ abi: gameStartedTopic, data: startedLog.data, topics: startedLog.topics });
+          const newSessionId = (decoded.args as any).sessionId as bigint;
+          void fetch("/api/claw/settle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId: newSessionId.toString() }),
+          });
+        } catch { /* not a GameStarted log — ignore */ }
+      }
+
       await loadGame();
     } catch (err: any) {
       toast.error(err?.shortMessage ?? err?.message ?? "Failed to start claw game.");
@@ -391,6 +437,13 @@ export default function ClawPage() {
             </span>
           </div>
         </div>
+
+        {/* ── Batch inventory ── */}
+        {(BATCH_RNG_ADDRESS || batchInventory) && (
+          <div className="mt-2">
+            <BatchInventoryBar inventory={batchInventory} loading={loading && !batchInventory} />
+          </div>
+        )}
 
         {/* ── Machine (fills remaining space) ── */}
         <div className="mt-2 flex flex-1 min-h-0 items-center justify-center">

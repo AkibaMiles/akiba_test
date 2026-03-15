@@ -44,7 +44,7 @@ export function ClawActionBanner({ session, actionLoading, onSettle, onClaim, on
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold text-cyan-800">Session #{sid}</p>
-          <p className="text-[10px] text-cyan-600">Oracle ready — reveal your outcome!</p>
+          <p className="text-[10px] text-cyan-600">Prize ready — settle to confirm on-chain!</p>
         </div>
         <button
           disabled={anyLoading}

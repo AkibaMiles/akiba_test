@@ -30,9 +30,14 @@
   "dependencies": {
     "@chainlink/contracts": "^1.3.0",
     "@chainlink/contracts-ccip": "^1.5.0",
+    "@layerzerolabs/lz-evm-messagelib-v2": "^3.0.165",
+    "@layerzerolabs/lz-evm-oapp-v2": "^2.3.44",
+    "@layerzerolabs/lz-evm-protocol-v2": "^3.0.165",
+    "@openzeppelin/merkle-tree": "^1.0.8",
     "@pythnetwork/entropy-sdk-solidity": "^2.1.0",
     "@safe-global/protocol-kit": "^6.0.4",
     "dotenv": "^16.4.5",
+    "solidity-bytes-utils": "^0.8.4",
     "witnet-solidity-bridge": "^2.0.18"
   },
   "scripts": {

@@ -85,8 +85,8 @@ export function ClawMachineDisplay({ gameState, rewardClass, className = "" }: P
     switch (gameState) {
       case "idle":     return "Pick a tier and start your pull";
       case "starting": return "Submitting transaction…";
-      case "pending":  return "Claw grabbing — oracle resolving…";
-      case "ready":    return "Oracle ready — tap Reveal!";
+      case "pending":  return "Claw in motion — revealing prize…";
+      case "ready":    return "Prize ready — tap Reveal!";
       case "settling": return "Lifting your prize…";
       case "settled":
         return rewardClass === "lose"
