@@ -46,7 +46,7 @@ const RC_EPIC      = 4;
 const RC_LEGENDARY = 5;
 
 // ── Default distribution per 1000 plays ─────────────────────────────────────
-const DISTRIBUTION: Record<number, number> = {
+const DEFAULT_DISTRIBUTION: Record<number, number> = {
   [RC_LOSE]:      600,
   [RC_COMMON]:    320,
   [RC_RARE]:       60,
@@ -54,20 +54,64 @@ const DISTRIBUTION: Record<number, number> = {
   [RC_LEGENDARY]:   2,
 };
 
+/**
+ * Resolve the distribution to use for this run.
+ *
+ * Priority:
+ *   1. PRESET=promo  — all outcomes are Common (everyone wins Miles)
+ *   2. DIST_LOSE / DIST_COMMON / DIST_RARE / DIST_EPIC / DIST_LEGENDARY env vars
+ *      — exact counts (must sum to BATCH_SIZE exactly; no proportional scaling)
+ *   3. Default 60/32/6/1.8/0.2 distribution scaled to BATCH_SIZE
+ */
+function resolveDistribution(batchSize: number): Record<number, number> {
+  const preset = process.env.PRESET?.toLowerCase();
+
+  if (preset === "promo") {
+    console.log("     PRESET=promo — all outcomes set to Common (everyone wins AkibaMiles)");
+    return {
+      [RC_LOSE]:      0,
+      [RC_COMMON]:    batchSize,
+      [RC_RARE]:      0,
+      [RC_EPIC]:      0,
+      [RC_LEGENDARY]: 0,
+    };
+  }
+
+  const hasCustom = ["DIST_LOSE","DIST_COMMON","DIST_RARE","DIST_EPIC","DIST_LEGENDARY"]
+    .some(k => process.env[k] !== undefined);
+
+  if (hasCustom) {
+    const counts = {
+      [RC_LOSE]:      Number(process.env.DIST_LOSE      ?? 0),
+      [RC_COMMON]:    Number(process.env.DIST_COMMON    ?? 0),
+      [RC_RARE]:      Number(process.env.DIST_RARE      ?? 0),
+      [RC_EPIC]:      Number(process.env.DIST_EPIC      ?? 0),
+      [RC_LEGENDARY]: Number(process.env.DIST_LEGENDARY ?? 0),
+    };
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    if (total !== batchSize)
+      throw new Error(`Custom distribution sums to ${total} but BATCH_SIZE=${batchSize}. They must be equal.`);
+    console.log("     Using custom distribution from DIST_* env vars");
+    return counts;
+  }
+
+  // Default: scale 1000-play ratios to actual batch size
+  const scale = batchSize / 1000;
+  const counts: Record<number, number> = {};
+  let assigned = 0;
+  for (const [rc, count] of Object.entries(DEFAULT_DISTRIBUTION)) {
+    counts[Number(rc)] = Math.round(count * scale);
+    assigned += counts[Number(rc)];
+  }
+  counts[RC_LOSE] += batchSize - assigned; // absorb rounding remainder
+  return counts;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Build the outcomes array with exact distribution, then shuffle it. */
 function buildShuffledOutcomes(batchSize: number, seed: Buffer): number[] {
-  // Scale distribution proportionally to batchSize
-  const scale = batchSize / 1000;
-  const counts: Record<number, number> = {};
-  let assigned = 0;
-  for (const [rc, count] of Object.entries(DISTRIBUTION)) {
-    counts[Number(rc)] = Math.round(count * scale);
-    assigned += counts[Number(rc)];
-  }
-  // Handle rounding — assign remainder to Lose
-  counts[RC_LOSE] += batchSize - assigned;
+  const counts = resolveDistribution(batchSize);
 
   // Fill array
   const outcomes: number[] = [];

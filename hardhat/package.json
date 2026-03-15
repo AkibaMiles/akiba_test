@@ -36,9 +36,10 @@
     "@openzeppelin/merkle-tree": "^1.0.8",
     "@pythnetwork/entropy-sdk-solidity": "^2.1.0",
     "@safe-global/protocol-kit": "^6.0.4",
+    "@supabase/supabase-js": "^2.99.1",
     "dotenv": "^16.4.5",
     "solidity-bytes-utils": "^0.8.4",
-    "witnet-solidity-bridge": "^2.0.18"
+    "witnet-solidity-bridge": "2.0.18"
   },
   "scripts": {
     "compile": "hardhat compile",
