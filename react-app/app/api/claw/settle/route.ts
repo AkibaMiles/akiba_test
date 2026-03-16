@@ -108,6 +108,35 @@ async function wait(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function traceClawSettle({
+  sessionId,
+  phase,
+  level = "info",
+  message,
+  txHash,
+  details,
+}: {
+  sessionId: bigint;
+  phase: string;
+  level?: "info" | "warn" | "error";
+  message?: string;
+  txHash?: `0x${string}` | "";
+  details?: Record<string, unknown>;
+}) {
+  try {
+    await supabase.from("claw_settle_logs").insert({
+      session_id: sessionId.toString(),
+      phase,
+      level,
+      message,
+      tx_hash: txHash || null,
+      details: details ?? null,
+    });
+  } catch (err) {
+    console.error("[claw/settle] trace write failed", err);
+  }
+}
+
 function isAlreadyKnownNonceError(err: any) {
   const message = `${err?.shortMessage ?? ""} ${err?.details ?? ""} ${err?.message ?? ""}`.toLowerCase();
   return message.includes("already known") || message.includes("nonce provided for the transaction is lower");
@@ -160,16 +189,48 @@ export async function POST(req: Request) {
     sid = BigInt(sessionId);
     const sessionKey = sid.toString();
 
+    await traceClawSettle({
+      sessionId: sid,
+      phase: "request_started",
+      message: "Settle request received",
+    });
+
     if (inFlightSessions.has(sessionKey)) {
+      await traceClawSettle({
+        sessionId: sid,
+        phase: "in_flight",
+        level: "warn",
+        message: "Session already processing in this runtime",
+      });
       return NextResponse.json({ status: "processing" }, { status: 202 });
     }
     inFlightSessions.add(sessionKey);
 
     let session = await readSession(pub, sid);
+    await traceClawSettle({
+      sessionId: sid,
+      phase: "session_read",
+      details: {
+        status: session.status,
+        rewardClass: session.rewardClass,
+        voucherId: session.voucherId.toString(),
+      },
+    });
     if (session.status === SESSION_STATUS.claimed || session.status === SESSION_STATUS.burned) {
+      await traceClawSettle({
+        sessionId: sid,
+        phase: "already_terminal",
+        message: "Session already claimed or burned",
+        details: { status: session.status },
+      });
       return NextResponse.json({ status: "already_claimed", rewardClass: Number(session.rewardClass) }, { status: 200 });
     }
     if (session.status === SESSION_STATUS.refunded) {
+      await traceClawSettle({
+        sessionId: sid,
+        phase: "already_refunded",
+        message: "Session already refunded",
+      });
       return NextResponse.json({ status: "refunded" }, { status: 200 });
     }
 
@@ -195,10 +256,21 @@ export async function POST(req: Request) {
       }) as { batchId: bigint; playIndex: bigint; committedClass: number };
 
       if (session.status === SESSION_STATUS.claimed || session.status === SESSION_STATUS.burned) {
+        await traceClawSettle({
+          sessionId: sid,
+          phase: "terminal_reached",
+          message: "Session reached terminal state during processing",
+          details: { status: session.status },
+        });
         break;
       }
 
       if (sp.batchId === 0n) {
+        await traceClawSettle({
+          sessionId: sid,
+          phase: "pending_registration",
+          message: "Session play not registered in batch yet",
+        });
         await wait(STEP_WAIT_MS);
         continue;
       }
@@ -211,6 +283,12 @@ export async function POST(req: Request) {
           .single();
 
         if (error || !data) {
+          await traceClawSettle({
+            sessionId: sid,
+            phase: "batch_lookup_failed",
+            level: "error",
+            message: `Batch ${sp.batchId} not found in DB`,
+          });
           return NextResponse.json({ error: `Batch ${sp.batchId} not found in DB` }, { status: 404 });
         }
 
@@ -222,6 +300,17 @@ export async function POST(req: Request) {
 
         if (!hasLoggedOutcome) {
           console.log(`[claw/settle] session=${sid} playIndex=${playIndex} outcome=${RC_NAMES[rewardClass]}`);
+          await traceClawSettle({
+            sessionId: sid,
+            phase: "proof_loaded",
+            message: "Loaded batch proof for session",
+            details: {
+              batchId: sp.batchId.toString(),
+              playIndex,
+              rewardClass,
+              outcome: RC_NAMES[rewardClass],
+            },
+          });
           hasLoggedOutcome = true;
         }
       }
@@ -240,11 +329,34 @@ export async function POST(req: Request) {
           settleHash = txHash;
           await pub.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
           console.log(`[claw/settle] ✓ session=${sid} committed tx=${settleHash}`);
+          await traceClawSettle({
+            sessionId: sid,
+            phase: "commit_succeeded",
+            txHash,
+            message: "commitOutcome confirmed",
+          });
           await wait(500);
           continue;
         } catch (err: any) {
-          if (!isIgnorableCommitError(err)) throw err;
+          if (!isIgnorableCommitError(err)) {
+            await traceClawSettle({
+              sessionId: sid,
+              phase: "commit_failed",
+              level: "error",
+              message: err?.shortMessage ?? err?.message ?? "commitOutcome failed",
+              details: {
+                details: err?.details ?? null,
+              },
+            });
+            throw err;
+          }
           console.warn(`[claw/settle] commit already landed or is in-flight for session=${sid}`);
+          await traceClawSettle({
+            sessionId: sid,
+            phase: "commit_ignorable",
+            level: "warn",
+            message: err?.shortMessage ?? err?.message ?? "commitOutcome already landed or in-flight",
+          });
           await wait(STEP_WAIT_MS);
           continue;
         }
@@ -264,10 +376,33 @@ export async function POST(req: Request) {
           settleHash = txHash;
           await pub.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
           console.log(`[claw/settle] ✓ session=${sid} settled tx=${settleHash}`);
+          await traceClawSettle({
+            sessionId: sid,
+            phase: "settle_succeeded",
+            txHash,
+            message: "settleGame confirmed",
+          });
           continue;
         } catch (err: any) {
-          if (!isIgnorableSettleError(err)) throw err;
+          if (!isIgnorableSettleError(err)) {
+            await traceClawSettle({
+              sessionId: sid,
+              phase: "settle_failed",
+              level: "error",
+              message: err?.shortMessage ?? err?.message ?? "settleGame failed",
+              details: {
+                details: err?.details ?? null,
+              },
+            });
+            throw err;
+          }
           console.warn(`[claw/settle] settle not ready or already in-flight for session=${sid}`);
+          await traceClawSettle({
+            sessionId: sid,
+            phase: "settle_ignorable",
+            level: "warn",
+            message: err?.shortMessage ?? err?.message ?? "settleGame not ready or already in-flight",
+          });
           await wait(STEP_WAIT_MS);
           continue;
         }
@@ -287,10 +422,33 @@ export async function POST(req: Request) {
           claimHash = txHash;
           await pub.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
           console.log(`[claw/settle] ✓ session=${sid} claimed tx=${claimHash}`);
+          await traceClawSettle({
+            sessionId: sid,
+            phase: "claim_succeeded",
+            txHash,
+            message: "claimReward confirmed",
+          });
           continue;
         } catch (err: any) {
-          if (!isIgnorableClaimError(err)) throw err;
+          if (!isIgnorableClaimError(err)) {
+            await traceClawSettle({
+              sessionId: sid,
+              phase: "claim_failed",
+              level: "error",
+              message: err?.shortMessage ?? err?.message ?? "claimReward failed",
+              details: {
+                details: err?.details ?? null,
+              },
+            });
+            throw err;
+          }
           console.warn(`[claw/settle] claim already in-flight or status changed for session=${sid}`);
+          await traceClawSettle({
+            sessionId: sid,
+            phase: "claim_ignorable",
+            level: "warn",
+            message: err?.shortMessage ?? err?.message ?? "claimReward already in-flight or status changed",
+          });
           await wait(STEP_WAIT_MS);
           continue;
         }
@@ -300,6 +458,17 @@ export async function POST(req: Request) {
     }
 
     session = await readSession(pub, sid);
+    await traceClawSettle({
+      sessionId: sid,
+      phase: "request_finished",
+      message: "Settle request finished",
+      details: {
+        status: session.status,
+        rewardClass: session.rewardClass,
+        hash: settleHash || null,
+        claimHash: claimHash || null,
+      },
+    });
 
     return NextResponse.json({
       status:
@@ -321,6 +490,17 @@ export async function POST(req: Request) {
 
   } catch (err: any) {
     console.error("[claw/settle]", err);
+    if (sid !== null) {
+      await traceClawSettle({
+        sessionId: sid,
+        phase: "request_failed",
+        level: "error",
+        message: err?.shortMessage ?? err?.message ?? "Unknown error",
+        details: {
+          details: err?.details ?? null,
+        },
+      });
+    }
     return NextResponse.json(
       { error: err?.shortMessage ?? err?.message ?? "Unknown error" },
       { status: 500 },

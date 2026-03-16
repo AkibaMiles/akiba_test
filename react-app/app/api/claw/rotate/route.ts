@@ -14,10 +14,10 @@ import { createPublicClient, createWalletClient, http, parseAbi } from "viem";
 import { celo } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { StandardMerkleTree } from "@openzeppelin/merkle-tree";
-import * as crypto from "crypto";
 import { supabase } from "@/lib/supabaseClient";
 import batchRngArtifact from "@/contexts/merkleBatchRng.json";
 import clawGameArtifactRaw from "@/contexts/akibaClawGame.json";
+import { ensureActiveClawBatch } from "@/lib/clawBatchAdmin";
 import type { Abi } from "viem";
 
 const clawGameArtifact = clawGameArtifactRaw.abi as unknown as Abi;
@@ -27,10 +27,7 @@ const clawGameArtifact = clawGameArtifactRaw.abi as unknown as Abi;
 const BATCH_RNG_ADDRESS = (process.env.NEXT_PUBLIC_BATCH_RNG_ADDRESS ?? "") as `0x${string}`;
 const CLAW_GAME_ADDRESS = (process.env.NEXT_PUBLIC_CLAW_GAME_ADDRESS  ?? "") as `0x${string}`;
 const CELO_RPC_URL      = process.env.CELO_RPC_URL  ?? "https://forno.celo.org";
-const ADMIN_PK          = process.env.PRIVATE_KEY;    // owner of MerkleBatchRng (openBatch)
 const RELAYER_PK        = process.env.CELO_RELAYER_PK;
-
-const BATCH_SIZE = 1000;
 
 const RC_LOSE = 1, RC_COMMON = 2, RC_RARE = 3, RC_EPIC = 4, RC_LEGENDARY = 5;
 const DISTRIBUTION: Record<number, number> = {
@@ -39,8 +36,6 @@ const DISTRIBUTION: Record<number, number> = {
 const RC_NAMES: Record<number, string> = {
   1: "Lose", 2: "Common", 3: "Rare", 4: "Epic", 5: "Legendary",
 };
-const bigintReplacer = (_k: string, v: unknown) => typeof v === "bigint" ? v.toString() : v;
-
 const gameStartedAbi = parseAbi([
   "event GameStarted(uint256 indexed sessionId, address indexed player, uint8 indexed tierId, uint256 playCost, uint256 requestBlock)",
 ]);
@@ -73,31 +68,6 @@ const clawGameMiniAbi = [
   },
 ] as const;
 
-/* ─── Helpers ─────────────────────────────────────────────────────────────── */
-
-function buildShuffledOutcomes(batchSize: number, seed: Buffer): number[] {
-  const scale = batchSize / 1000;
-  const counts: Record<number, number> = {};
-  let assigned = 0;
-  for (const [rc, count] of Object.entries(DISTRIBUTION)) {
-    counts[Number(rc)] = Math.round(count * scale);
-    assigned += counts[Number(rc)];
-  }
-  counts[RC_LOSE] += batchSize - assigned;
-  const outcomes: number[] = [];
-  for (const [rc, count] of Object.entries(counts))
-    for (let i = 0; i < count; i++) outcomes.push(Number(rc));
-  let seedBuf = seed;
-  for (let i = outcomes.length - 1; i > 0; i--) {
-    seedBuf = crypto.createHash("sha256")
-      .update(Buffer.concat([seedBuf, Buffer.from(i.toString())]))
-      .digest();
-    const j = seedBuf.readUInt32BE(0) % (i + 1);
-    [outcomes[i], outcomes[j]] = [outcomes[j], outcomes[i]];
-  }
-  return outcomes;
-}
-
 /* ─── Route ───────────────────────────────────────────────────────────────── */
 
 export async function GET() {
@@ -108,68 +78,8 @@ export async function GET() {
     if (!BATCH_RNG_ADDRESS) return NextResponse.json({ error: "BATCH_RNG not configured" }, { status: 500 });
 
     const pub = createPublicClient({ chain: celo, transport: http(CELO_RPC_URL) });
-
-    // ── 1. Check active batch ──────────────────────────────────────────────
-    const inv = await pub.readContract({
-      address: BATCH_RNG_ADDRESS,
-      abi: batchRngArtifact,
-      functionName: "getActiveBatchInventory",
-    }) as readonly [bigint, bigint, bigint, bigint, bigint, bigint, bigint, bigint, boolean];
-
-    const [onChainBatchId, , , , , , , , batchActive] = inv;
-    info(`Active batch: ${onChainBatchId}  active=${batchActive}`);
-
-    // ── 2. Open new batch if exhausted ────────────────────────────────────
-    if (!batchActive) {
-      if (!ADMIN_PK) { info("PRIVATE_KEY not set — cannot open batch"); }
-      else {
-        info("Batch exhausted — generating new batch…");
-        const adminAccount = privateKeyToAccount(`0x${ADMIN_PK}`);
-        const adminWallet  = createWalletClient({ chain: celo, transport: http(CELO_RPC_URL), account: adminAccount });
-
-        const batchId  = BigInt(Math.floor(Date.now() / 1000));
-        const seed     = crypto.randomBytes(32);
-        const outcomes = buildShuffledOutcomes(BATCH_SIZE, seed);
-        const inventory = {
-          lose:      outcomes.filter(r => r === RC_LOSE).length,
-          common:    outcomes.filter(r => r === RC_COMMON).length,
-          rare:      outcomes.filter(r => r === RC_RARE).length,
-          epic:      outcomes.filter(r => r === RC_EPIC).length,
-          legendary: outcomes.filter(r => r === RC_LEGENDARY).length,
-        };
-
-        const values: [bigint, bigint, bigint][] = outcomes.map((rc, idx) =>
-          [batchId, BigInt(idx), BigInt(rc)]
-        );
-        const tree = StandardMerkleTree.of(values, ["uint256", "uint256", "uint8"]);
-        const root = tree.root as `0x${string}`;
-
-        const hash = await adminWallet.writeContract({
-          address: BATCH_RNG_ADDRESS,
-          abi: batchRngArtifact,
-          functionName: "openBatch",
-          args: [batchId, root, BigInt(BATCH_SIZE),
-            BigInt(inventory.lose), BigInt(inventory.common), BigInt(inventory.rare),
-            BigInt(inventory.epic), BigInt(inventory.legendary)],
-          account: adminAccount,
-        });
-        await pub.waitForTransactionReceipt({ hash, confirmations: 1 });
-        info(`Opened batch ${batchId} (${root}) tx=${hash}`);
-
-        // Store in Supabase
-        const { error: dbErr } = await supabase.from("claw_batches").insert({
-          batch_id:   batchId.toString(),
-          merkle_root: root,
-          batch_size:  BATCH_SIZE,
-          outcomes:    JSON.parse(JSON.stringify(outcomes, bigintReplacer)),
-          tree_dump:   JSON.parse(JSON.stringify(tree.dump(), bigintReplacer)),
-          inventory,
-          active:      true,
-        });
-        if (dbErr) info(`⚠ Supabase insert failed: ${dbErr.message}`);
-        else info(`Batch ${batchId} stored in Supabase`);
-      }
-    }
+    const batchState = await ensureActiveClawBatch(info);
+    info(`Active batch ready: ${batchState.batchId} active=${batchState.active} opened=${batchState.opened}`);
 
     // ── 3. Retry any uncommitted pending sessions ─────────────────────────
     if (RELAYER_PK && CLAW_GAME_ADDRESS) {

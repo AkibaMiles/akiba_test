@@ -71,6 +71,7 @@ export default function ClawPage() {
   const [infoOpen, setInfoOpen]           = useState(false);
   const [sessionsOpen, setSessionsOpen]   = useState(false);
   const settleRequestsRef = useRef<Map<string, number>>(new Map());
+  const batchEnsureRef = useRef<number>(0);
 
   const publicClient = useMemo(
     () =>
@@ -177,6 +178,52 @@ export default function ClawPage() {
     }
   }
 
+  async function ensureActiveBatch(options?: { force?: boolean; silent?: boolean }) {
+    if (!BATCH_RNG_ADDRESS) return true;
+
+    const now = Date.now();
+    if (!options?.force && now < batchEnsureRef.current) return true;
+
+    batchEnsureRef.current = now + 15000;
+    try {
+      const res = await fetch("/api/claw/rotate/ensure", { method: "POST" });
+      const payload = await res.json().catch(() => null);
+      if (!res.ok || payload?.ok === false) {
+        if (!options?.silent) {
+          toast.error(payload?.error ?? "Failed to prepare the next claw batch.");
+        }
+        return false;
+      }
+
+      if (payload?.opened) {
+        setBatchInventory((current) => ({
+          batchId: BigInt(payload.batchId),
+          loses: current?.loses ?? 0n,
+          commons: current?.commons ?? 0n,
+          rares: current?.rares ?? 0n,
+          epics: current?.epics ?? 0n,
+          legendarys: current?.legendarys ?? 0n,
+          totalRemaining: BigInt(payload.totalRemaining),
+          totalPlays: BigInt(payload.totalPlays),
+          active: true,
+        }));
+        if (!options?.silent) {
+          toast.success("Fresh claw batch loaded.");
+        }
+      }
+
+      batchEnsureRef.current = payload?.opened ? 0 : Date.now() + 15000;
+      return true;
+    } catch (err) {
+      console.error("[ClawPage] ensure batch failed", err);
+      if (!options?.silent) {
+        toast.error("Failed to prepare the next claw batch.");
+      }
+      batchEnsureRef.current = Date.now() + 15000;
+      return false;
+    }
+  }
+
   async function loadGame() {
     if (!CLAW_GAME_ADDRESS) {
       toast.error("NEXT_PUBLIC_CLAW_GAME_ADDRESS is not configured.");
@@ -247,6 +294,9 @@ export default function ClawPage() {
             totalPlays:     inv[7],
             active:         inv[8],
           });
+          if (!inv[8]) {
+            void ensureActiveBatch({ silent: true });
+          }
         } catch {
           // Batch RNG not deployed yet — silently skip
         }
@@ -373,6 +423,12 @@ export default function ClawPage() {
   async function handleStartGame() {
     if (!address || !selectedConfig) { toast.error("Connect your wallet first."); return; }
     try {
+      if (BATCH_RNG_ADDRESS && batchInventory?.active === false) {
+        setActionLoading("start");
+        const ready = await ensureActiveBatch({ force: true });
+        if (!ready) return;
+        await loadGame();
+      }
       if (!selectedConfig.payInMiles) await ensureUsdtAllowance();
       const wc = await getWalletClient();
       setActionLoading("start");
@@ -441,12 +497,14 @@ export default function ClawPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   const isAnyLoading = !!actionLoading;
-  const canPlay = !!address && !!selectedConfig && !isAnyLoading && hasSufficientBalance;
+  const batchReady = !BATCH_RNG_ADDRESS || batchInventory?.active !== false;
+  const canPlay = !!address && !!selectedConfig && !isAnyLoading && hasSufficientBalance && batchReady;
 
   const playLabel = (() => {
     if (actionLoading === "start") return "Starting…";
     if (!hasLoadedOnce && loading && !sessions.length) return "Loading…";
     if (!address) return "Connect wallet to play";
+    if (!batchReady) return "Preparing next batch…";
     if (!hasSufficientBalance) {
       return selectedConfig?.payInMiles ? "Not enough Miles" : "Not enough USDT";
     }
