@@ -17,6 +17,10 @@ import { supabase } from "@/lib/supabaseClient";
 import batchRngArtifact from "@/contexts/merkleBatchRng.json";
 import clawGameArtifactRaw from "@/contexts/akibaClawGame.json";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 const clawGameArtifact = clawGameArtifactRaw.abi as unknown as Abi;
 const batchRngAbi = batchRngArtifact as unknown as Abi;
 
@@ -41,8 +45,8 @@ const SESSION_STATUS = {
 } as const;
 
 const inFlightSessions = new Set<string>();
-const SETTLE_TIMEOUT_MS = 10_000;
-const STEP_WAIT_MS = 1200;
+const SETTLE_TIMEOUT_MS = 25_000;
+const STEP_WAIT_MS = 900;
 
 /* ─── Clients ─────────────────────────────────────────────────────────────── */
 

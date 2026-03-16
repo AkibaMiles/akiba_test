@@ -151,19 +151,28 @@ export default function ClawPage() {
   async function requestAutoSettle(sessionId: bigint, options?: { force?: boolean }) {
     const key = sessionId.toString();
     const now = Date.now();
-    const lastAttemptAt = settleRequestsRef.current.get(key) ?? 0;
-    if (!options?.force && now - lastAttemptAt < 30000) return null;
+    const nextAllowedAt = settleRequestsRef.current.get(key) ?? 0;
+    if (!options?.force && now < nextAllowedAt) return null;
 
-    settleRequestsRef.current.set(key, now);
+    settleRequestsRef.current.set(key, now + 8000);
     try {
       const res = await fetch("/api/claw/settle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId: key }),
       });
-      return await res.json().catch(() => null);
+      const payload = await res.json().catch(() => null);
+      if (res.status === 200) {
+        settleRequestsRef.current.delete(key);
+      } else if (res.status === 202) {
+        settleRequestsRef.current.set(key, Date.now() + 5000);
+      } else {
+        settleRequestsRef.current.set(key, Date.now() + 8000);
+      }
+      return payload;
     } catch (err) {
       console.error("[ClawPage] auto-settle failed", err);
+      settleRequestsRef.current.set(key, Date.now() + 8000);
       return null;
     }
   }
