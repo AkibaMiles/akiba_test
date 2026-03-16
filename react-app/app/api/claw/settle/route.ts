@@ -18,6 +18,7 @@ import batchRngArtifact from "@/contexts/merkleBatchRng.json";
 import clawGameArtifactRaw from "@/contexts/akibaClawGame.json";
 
 const clawGameArtifact = clawGameArtifactRaw.abi as unknown as Abi;
+const batchRngAbi = batchRngArtifact as unknown as Abi;
 
 /* ─── Config ──────────────────────────────────────────────────────────────── */
 
@@ -30,6 +31,19 @@ const RC_NAMES: Record<number, string> = {
   1: "Lose", 2: "Common", 3: "Rare", 4: "Epic", 5: "Legendary",
 };
 
+const SESSION_STATUS = {
+  none: 0,
+  pending: 1,
+  settled: 2,
+  claimed: 3,
+  burned: 4,
+  refunded: 5,
+} as const;
+
+const inFlightSessions = new Set<string>();
+const SETTLE_TIMEOUT_MS = 10_000;
+const STEP_WAIT_MS = 1200;
+
 /* ─── Clients ─────────────────────────────────────────────────────────────── */
 
 function getClients() {
@@ -40,9 +54,93 @@ function getClients() {
   return { wallet, pub, account };
 }
 
+async function writeWithFreshNonce({
+  pub,
+  wallet,
+  account,
+  address,
+  abi,
+  functionName,
+  args,
+}: {
+  pub: any;
+  wallet: any;
+  account: any;
+  address: `0x${string}`;
+  abi: Abi;
+  functionName: string;
+  args: readonly unknown[];
+}) {
+  const nonce = await pub.getTransactionCount({
+    address: account.address,
+    blockTag: "pending",
+  });
+
+  return await wallet.writeContract({
+    address,
+    abi,
+    functionName,
+    args,
+    account,
+    nonce,
+  });
+}
+
+async function readSession(pub: any, sessionId: bigint) {
+  return await pub.readContract({
+    address: CLAW_GAME_ADDRESS,
+    abi: clawGameArtifact,
+    functionName: "getSession",
+    args: [sessionId],
+  }) as {
+    sessionId: bigint;
+    status: number;
+    rewardClass: number;
+    voucherId: bigint;
+  };
+}
+
+async function wait(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isAlreadyKnownNonceError(err: any) {
+  const message = `${err?.shortMessage ?? ""} ${err?.details ?? ""} ${err?.message ?? ""}`.toLowerCase();
+  return message.includes("already known") || message.includes("nonce provided for the transaction is lower");
+}
+
+function isIgnorableCommitError(err: any) {
+  const message = `${err?.shortMessage ?? ""} ${err?.details ?? ""} ${err?.message ?? ""}`.toLowerCase();
+  return (
+    message.includes("already known") ||
+    message.includes("nonce provided for the transaction is lower") ||
+    message.includes("batch: already committed")
+  );
+}
+
+function isIgnorableSettleError(err: any) {
+  const message = `${err?.shortMessage ?? ""} ${err?.details ?? ""} ${err?.message ?? ""}`.toLowerCase();
+  return (
+    message.includes("already known") ||
+    message.includes("nonce provided for the transaction is lower") ||
+    message.includes("wrongstatus") ||
+    message.includes("randomnessnotready")
+  );
+}
+
+function isIgnorableClaimError(err: any) {
+  const message = `${err?.shortMessage ?? ""} ${err?.details ?? ""} ${err?.message ?? ""}`.toLowerCase();
+  return (
+    message.includes("already known") ||
+    message.includes("nonce provided for the transaction is lower") ||
+    message.includes("wrongstatus")
+  );
+}
+
 /* ─── Route ───────────────────────────────────────────────────────────────── */
 
 export async function POST(req: Request) {
+  let sid: bigint | null = null;
   try {
     const { sessionId } = await req.json();
     if (!sessionId && sessionId !== 0)
@@ -55,66 +153,167 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "CLAW_GAME not configured" }, { status: 500 });
 
     const { wallet, pub, account } = getClients();
-    const sid = BigInt(sessionId);
+    sid = BigInt(sessionId);
+    const sessionKey = sid.toString();
 
-    // 1. Fetch the play slot assigned to this session
-    const sp = await pub.readContract({
-      address: BATCH_RNG_ADDRESS,
-      abi: batchRngArtifact,
-      functionName: "getSessionPlay",
-      args: [sid],
-    }) as { batchId: bigint; playIndex: bigint; committedClass: number };
+    if (inFlightSessions.has(sessionKey)) {
+      return NextResponse.json({ status: "processing" }, { status: 202 });
+    }
+    inFlightSessions.add(sessionKey);
 
-    if (sp.batchId === 0n)
-      return NextResponse.json({ error: "Session not registered in batch RNG" }, { status: 400 });
+    let session = await readSession(pub, sid);
+    if (session.status === SESSION_STATUS.claimed || session.status === SESSION_STATUS.burned) {
+      return NextResponse.json({ status: "already_claimed", rewardClass: Number(session.rewardClass) }, { status: 200 });
+    }
+    if (session.status === SESSION_STATUS.refunded) {
+      return NextResponse.json({ status: "refunded" }, { status: 200 });
+    }
 
-    if (sp.committedClass !== 0)
-      return NextResponse.json({ status: "already_settled" }, { status: 200 });
+    let sp = {
+      batchId: 0n,
+      playIndex: 0n,
+      committedClass: 0,
+    } as { batchId: bigint; playIndex: bigint; committedClass: number };
+    let rewardClass = 0;
+    let proof: `0x${string}`[] = [];
+    let hasLoggedOutcome = false;
+    let settleHash = "" as `0x${string}` | "";
+    let claimHash = "" as `0x${string}` | "";
+    const deadline = Date.now() + SETTLE_TIMEOUT_MS;
 
-    // 2. Load batch data from Supabase
-    const { data, error } = await supabase
-      .from("claw_batches")
-      .select("outcomes, tree_dump")
-      .eq("batch_id", sp.batchId.toString())
-      .single();
+    while (Date.now() < deadline) {
+      session = await readSession(pub, sid);
+      sp = await pub.readContract({
+        address: BATCH_RNG_ADDRESS,
+        abi: batchRngAbi,
+        functionName: "getSessionPlay",
+        args: [sid],
+      }) as { batchId: bigint; playIndex: bigint; committedClass: number };
 
-    if (error || !data)
-      return NextResponse.json({ error: `Batch ${sp.batchId} not found in DB` }, { status: 404 });
+      if (session.status === SESSION_STATUS.claimed || session.status === SESSION_STATUS.burned) {
+        break;
+      }
 
-    // 3. Get outcome + generate Merkle proof
-    const outcomes: number[]  = data.outcomes;
-    const playIndex           = Number(sp.playIndex);
-    const rewardClass         = outcomes[playIndex];
-    const tree                = StandardMerkleTree.load(data.tree_dump);
-    const proof               = tree.getProof([sp.batchId, BigInt(playIndex), BigInt(rewardClass)]);
+      if (sp.batchId === 0n) {
+        await wait(STEP_WAIT_MS);
+        continue;
+      }
 
-    console.log(`[claw/settle] session=${sid} playIndex=${playIndex} outcome=${RC_NAMES[rewardClass]}`);
+      if (rewardClass === 0) {
+        const { data, error } = await supabase
+          .from("claw_batches")
+          .select("outcomes, tree_dump")
+          .eq("batch_id", sp.batchId.toString())
+          .single();
 
-    // 4. Call commitOutcome — MerkleBatchRng auto-calls settleGame() on success
-    const settleHash = await wallet.writeContract({
-      address: BATCH_RNG_ADDRESS,
-      abi: batchRngArtifact,
-      functionName: "commitOutcome",
-      args: [sid, rewardClass, proof],
-      account,
+        if (error || !data) {
+          return NextResponse.json({ error: `Batch ${sp.batchId} not found in DB` }, { status: 404 });
+        }
+
+        const outcomes: number[] = data.outcomes;
+        const playIndex = Number(sp.playIndex);
+        rewardClass = outcomes[playIndex];
+        const tree = StandardMerkleTree.load(data.tree_dump);
+        proof = tree.getProof([sp.batchId, BigInt(playIndex), BigInt(rewardClass)]) as `0x${string}`[];
+
+        if (!hasLoggedOutcome) {
+          console.log(`[claw/settle] session=${sid} playIndex=${playIndex} outcome=${RC_NAMES[rewardClass]}`);
+          hasLoggedOutcome = true;
+        }
+      }
+
+      if (sp.committedClass === 0 && session.status === SESSION_STATUS.pending) {
+        try {
+          const txHash = await writeWithFreshNonce({
+            pub,
+            wallet,
+            account,
+            address: BATCH_RNG_ADDRESS,
+            abi: batchRngAbi,
+            functionName: "commitOutcome",
+            args: [sid, rewardClass, proof],
+          });
+          settleHash = txHash;
+          await pub.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
+          console.log(`[claw/settle] ✓ session=${sid} committed tx=${settleHash}`);
+          await wait(500);
+          continue;
+        } catch (err: any) {
+          if (!isIgnorableCommitError(err)) throw err;
+          console.warn(`[claw/settle] commit already landed or is in-flight for session=${sid}`);
+          await wait(STEP_WAIT_MS);
+          continue;
+        }
+      }
+
+      if (session.status === SESSION_STATUS.pending) {
+        try {
+          const txHash = await writeWithFreshNonce({
+            pub,
+            wallet,
+            account,
+            address: CLAW_GAME_ADDRESS,
+            abi: clawGameArtifact,
+            functionName: "settleGame",
+            args: [sid],
+          });
+          settleHash = txHash;
+          await pub.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
+          console.log(`[claw/settle] ✓ session=${sid} settled tx=${settleHash}`);
+          continue;
+        } catch (err: any) {
+          if (!isIgnorableSettleError(err)) throw err;
+          console.warn(`[claw/settle] settle not ready or already in-flight for session=${sid}`);
+          await wait(STEP_WAIT_MS);
+          continue;
+        }
+      }
+
+      if (session.status === SESSION_STATUS.settled) {
+        try {
+          const txHash = await writeWithFreshNonce({
+            pub,
+            wallet,
+            account,
+            address: CLAW_GAME_ADDRESS,
+            abi: clawGameArtifact,
+            functionName: "claimReward",
+            args: [sid],
+          });
+          claimHash = txHash;
+          await pub.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
+          console.log(`[claw/settle] ✓ session=${sid} claimed tx=${claimHash}`);
+          continue;
+        } catch (err: any) {
+          if (!isIgnorableClaimError(err)) throw err;
+          console.warn(`[claw/settle] claim already in-flight or status changed for session=${sid}`);
+          await wait(STEP_WAIT_MS);
+          continue;
+        }
+      }
+
+      await wait(STEP_WAIT_MS);
+    }
+
+    session = await readSession(pub, sid);
+
+    return NextResponse.json({
+      status:
+        session.status === SESSION_STATUS.claimed ? "claimed" :
+        session.status === SESSION_STATUS.settled ? "settled" :
+        session.status === SESSION_STATUS.pending && sp.batchId === 0n ? "pending_registration" :
+        session.status === SESSION_STATUS.pending ? "pending" :
+        "processed",
+      hash: settleHash || undefined,
+      claimHash: claimHash || undefined,
+      rewardClass: Number(session.rewardClass || rewardClass),
+      outcome: RC_NAMES[session.rewardClass || rewardClass] ?? RC_NAMES[rewardClass],
+    }, {
+      status:
+        session.status === SESSION_STATUS.claimed || session.status === SESSION_STATUS.burned
+          ? 200
+          : 202,
     });
-
-    await pub.waitForTransactionReceipt({ hash: settleHash, confirmations: 1 });
-    console.log(`[claw/settle] ✓ session=${sid} settled as ${RC_NAMES[rewardClass]} tx=${settleHash}`);
-
-    // 5. Auto-claim — relayer calls claimReward so the user doesn't need to
-    const claimHash = await wallet.writeContract({
-      address: CLAW_GAME_ADDRESS,
-      abi: clawGameArtifact,
-      functionName: "claimReward",
-      args: [sid],
-      account,
-    });
-
-    await pub.waitForTransactionReceipt({ hash: claimHash, confirmations: 1 });
-    console.log(`[claw/settle] ✓ session=${sid} claimed tx=${claimHash}`);
-
-    return NextResponse.json({ hash: settleHash, claimHash, rewardClass, outcome: RC_NAMES[rewardClass] });
 
   } catch (err: any) {
     console.error("[claw/settle]", err);
@@ -122,5 +321,9 @@ export async function POST(req: Request) {
       { error: err?.shortMessage ?? err?.message ?? "Unknown error" },
       { status: 500 },
     );
+  } finally {
+    if (sid !== null) {
+      inFlightSessions.delete(sid.toString());
+    }
   }
 }

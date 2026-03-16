@@ -29,15 +29,12 @@ const RESULT_CFG = {
 
 export function ClawActionBanner({ session, actionLoading, onSettle, onClaim, onBurn }: Props) {
   const sid = session.sessionId.toString();
-  const isLoadingSettle = actionLoading === `settle-${sid}`;
   const isLoadingClaim  = actionLoading === `claim-${sid}`;
   const isLoadingBurn   = actionLoading === `burn-${sid}`;
   const anyLoading = !!actionLoading;
 
   /* ── PENDING ─────────────────────────────────────────────── */
   if (session.status === "pending") {
-    // canSettle means relayer hasn't committed yet but randomness is ready on-chain
-    // In batch mode this should resolve quickly via the API
     return (
       <div className="flex items-center gap-3 rounded-2xl border border-cyan-200 bg-cyan-50 px-3 py-2.5">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-cyan-100 text-base animate-spin">
@@ -45,22 +42,13 @@ export function ClawActionBanner({ session, actionLoading, onSettle, onClaim, on
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold text-cyan-800">Revealing your prize…</p>
-          <p className="text-[10px] text-cyan-600">Session #{sid} · processing on-chain</p>
+          <p className="text-[10px] text-cyan-600">Session #{sid} · no extra signature needed</p>
         </div>
-        {session.canSettle && (
-          <button
-            disabled={anyLoading}
-            onClick={onSettle}
-            className="shrink-0 rounded-xl bg-cyan-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm active:scale-[0.97] disabled:opacity-50"
-          >
-            {isLoadingSettle ? "…" : "Reveal →"}
-          </button>
-        )}
       </div>
     );
   }
 
-  /* ── SETTLED (relayer failed — allow manual claim) ───────── */
+  /* ── SETTLED (relayer should auto-claim) ─────────────────── */
   if (session.status === "settled") {
     const rc  = session.rewardClass;
     const cfg = RESULT_CFG[rc] ?? RESULT_CFG.none;
@@ -76,43 +64,18 @@ export function ClawActionBanner({ session, actionLoading, onSettle, onClaim, on
           <span className="text-base leading-none">{cfg.emoji}</span>
           <div className="flex-1 min-w-0">
             <p className={`text-xs font-semibold ${cfg.titleCls}`}>{cfg.title}</p>
-            <p className="text-[10px] text-slate-500">Session #{sid}</p>
+            <p className="text-[10px] text-slate-500">
+              {isLose ? "Closing your play…" : isVoucher ? "Issuing your voucher…" : "Sending reward…"}
+            </p>
           </div>
         </div>
-        <div className="flex gap-2">
-          {!isLose && (
-            <button
-              disabled={anyLoading}
-              onClick={onClaim}
-              className={`flex-1 rounded-xl py-1.5 text-xs font-semibold text-white shadow-sm active:scale-[0.97] disabled:opacity-50 ${
-                rc === "legendary" ? "bg-amber-500" :
-                rc === "epic"      ? "bg-violet-600" :
-                rc === "rare"      ? "bg-cyan-600" :
-                                     "bg-emerald-600"
-              }`}
-            >
-              {isLoadingClaim ? "…" : isVoucher ? "Claim voucher" : "Claim reward"}
-            </button>
-          )}
-          {isVoucher && (
-            <button
-              disabled={anyLoading}
-              onClick={onBurn}
-              className="flex-1 rounded-xl border border-slate-200 bg-white py-1.5 text-xs font-medium text-slate-700 shadow-sm active:scale-[0.97] disabled:opacity-50"
-            >
-              {isLoadingBurn ? "…" : `Take ${burnLabel}`}
-            </button>
-          )}
-          {isLose && (
-            <button
-              disabled={anyLoading}
-              onClick={onClaim}
-              className="flex-1 rounded-xl border border-slate-200 bg-white py-1.5 text-xs font-medium text-slate-600 active:scale-[0.97] disabled:opacity-50"
-            >
-              {isLoadingClaim ? "…" : "Dismiss"}
-            </button>
-          )}
-        </div>
+        {!isLose ? (
+          <div className="rounded-xl bg-white/70 px-3 py-2 text-[11px] text-slate-600">
+            {isVoucher
+              ? "Your voucher should appear automatically. If it gets stuck, use Sessions."
+              : "This reward should complete automatically in the background."}
+          </div>
+        ) : null}
       </div>
     );
   }

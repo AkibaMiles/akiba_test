@@ -19,6 +19,7 @@ type Props = {
   sessions: ClawSessionView[];
   tierConfigs: Record<number, ClawTierConfig | null>;
   loading: boolean;
+  refreshing?: boolean;
   actionLoading: string | null;
   onAction: (sessionId: bigint, action: "settle" | "claim" | "burn") => Promise<void> | void;
 };
@@ -48,6 +49,7 @@ export function ClawSessionsList({
   sessions,
   tierConfigs,
   loading,
+  refreshing = false,
   actionLoading,
   onAction,
 }: Props) {
@@ -83,6 +85,9 @@ export function ClawSessionsList({
                 {sessions.length}
               </span>
             </div>
+            {refreshing ? (
+              <p className="text-left text-[11px] text-slate-400">Refreshing in background…</p>
+            ) : null}
           </SheetHeader>
 
           {loading ? (
@@ -192,33 +197,15 @@ export function ClawSessionsList({
 
               <div className="mt-5 flex flex-col gap-3">
                 {selectedSession.status === "pending" ? (
-                  <Button
-                    title={selectedSession.canSettle ? "Settle session" : "Pending"}
-                    className="h-12 rounded-2xl bg-slate-950 text-white hover:bg-slate-800"
-                    disabled={!selectedSession.canSettle || !!actionLoading}
-                    onClick={() => onAction(selectedSession.sessionId, "settle")}
-                  >
-                    {actionLoading === `settle-${selectedSession.sessionId.toString()}`
-                      ? "Settling…"
-                      : selectedSession.canSettle
-                      ? "Reveal outcome"
-                      : "Still processing"}
-                  </Button>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    This play is still processing. No extra action should be needed.
+                  </div>
                 ) : null}
 
                 {selectedSession.status === "settled" ? (
-                  <Button
-                    title="Claim reward"
-                    className="h-12 rounded-2xl bg-slate-950 text-white hover:bg-slate-800"
-                    disabled={!!actionLoading}
-                    onClick={() => onAction(selectedSession.sessionId, "claim")}
-                  >
-                    {actionLoading === `claim-${selectedSession.sessionId.toString()}`
-                      ? "Claiming…"
-                      : selectedSession.rewardClass === "rare" || selectedSession.rewardClass === "legendary"
-                      ? "Claim voucher"
-                      : "Claim reward"}
-                  </Button>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    Reward processing is automatic. Use the fallback action below only if it stays stuck.
+                  </div>
                 ) : null}
 
                 {(selectedSession.status === "settled" || selectedSession.status === "claimed") &&
@@ -233,6 +220,20 @@ export function ClawSessionsList({
                     {actionLoading === `burn-${selectedSession.sessionId.toString()}`
                       ? "Burning…"
                       : "Use Miles/USDT instead"}
+                  </Button>
+                ) : null}
+
+                {selectedSession.status === "settled" ? (
+                  <Button
+                    title="Retry backend resolution"
+                    variant="outline"
+                    className="h-12 rounded-2xl border-slate-300"
+                    disabled={!!actionLoading}
+                    onClick={() => onAction(selectedSession.sessionId, "claim")}
+                  >
+                    {actionLoading === `claim-${selectedSession.sessionId.toString()}`
+                      ? "Retrying…"
+                      : "Retry auto-resolve"}
                   </Button>
                 ) : null}
               </div>

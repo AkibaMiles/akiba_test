@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -65,9 +65,12 @@ export default function ClawPage() {
   const [sessions, setSessions]           = useState<ClawSessionView[]>([]);
   const [batchInventory, setBatchInventory] = useState<BatchInventory | null>(null);
   const [loading, setLoading]             = useState(true);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [refreshing, setRefreshing]       = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [infoOpen, setInfoOpen]           = useState(false);
   const [sessionsOpen, setSessionsOpen]   = useState(false);
+  const settleRequestsRef = useRef<Map<string, number>>(new Map());
 
   const publicClient = useMemo(
     () =>
@@ -84,21 +87,19 @@ export default function ClawPage() {
   const selectedConfig = tierConfigs[selectedTier] ?? null;
 
   // ── Derived: most-actionable session ──────────────────────────────────────
+  const latestUnresolvedSession = useMemo<ClawSessionView | null>(
+    () => sessions.find((s) => s.status === "pending" || s.status === "settled") ?? null,
+    [sessions],
+  );
+
   const activeSession = useMemo<ClawSessionView | null>(() => {
-    // Voucher sessions need user action (burn) even after claim
-    const claimedVoucher = sessions.find(
-      (s) => s.status === "claimed" && (s.rewardClass === "rare" || s.rewardClass === "legendary"),
+    if (latestUnresolvedSession) return latestUnresolvedSession;
+    return (
+      sessions.find(
+        (s) => s.status === "claimed" && (s.rewardClass === "rare" || s.rewardClass === "legendary"),
+      ) ?? null
     );
-    if (claimedVoucher) return claimedVoucher;
-    // Show the most recent claimed result briefly
-    const recentClaimed = sessions.find((s) => s.status === "claimed");
-    if (recentClaimed) return recentClaimed;
-    const settled = sessions.find((s) => s.status === "settled");
-    if (settled) return settled;
-    const ready   = sessions.find((s) => s.status === "pending" && s.canSettle);
-    if (ready)   return ready;
-    return sessions.find((s) => s.status === "pending") ?? null;
-  }, [sessions]);
+  }, [latestUnresolvedSession, sessions]);
 
   // ── Derived: visual game state ─────────────────────────────────────────────
   const gameState = useMemo<ClawGameState>(() => {
@@ -147,6 +148,26 @@ export default function ClawPage() {
   useEffect(() => { void getUserAddress(); }, [getUserAddress]);
 
   // ── Load game data ─────────────────────────────────────────────────────────
+  async function requestAutoSettle(sessionId: bigint, options?: { force?: boolean }) {
+    const key = sessionId.toString();
+    const now = Date.now();
+    const lastAttemptAt = settleRequestsRef.current.get(key) ?? 0;
+    if (!options?.force && now - lastAttemptAt < 30000) return null;
+
+    settleRequestsRef.current.set(key, now);
+    try {
+      const res = await fetch("/api/claw/settle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: key }),
+      });
+      return await res.json().catch(() => null);
+    } catch (err) {
+      console.error("[ClawPage] auto-settle failed", err);
+      return null;
+    }
+  }
+
   async function loadGame() {
     if (!CLAW_GAME_ADDRESS) {
       toast.error("NEXT_PUBLIC_CLAW_GAME_ADDRESS is not configured.");
@@ -154,7 +175,11 @@ export default function ClawPage() {
       return;
     }
 
-    setLoading(true);
+    if (!hasLoadedOnce) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
 
     try {
       const contract = getContract({
@@ -279,22 +304,20 @@ export default function ClawPage() {
 
       setSessions(hydrated);
 
-      // Auto-retry any pending sessions that haven't been committed yet
-      // (catches sessions started before the settle API was wired, or after a hiccup)
-      for (const s of hydrated) {
-        if (s.status === "pending" && !s.canSettle) {
-          void fetch("/api/claw/settle", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionId: s.sessionId.toString() }),
-          });
-        }
+      // Auto-drive only the newest unresolved session through the relayer.
+      // Older resolved sessions should not keep the page looking active.
+      const newestUnresolved =
+        hydrated.find((s) => s.status === "pending" || s.status === "settled") ?? null;
+      if (newestUnresolved) {
+        void requestAutoSettle(newestUnresolved.sessionId);
       }
     } catch (err: any) {
       console.error("[ClawPage] load failed", err);
       // silent – don't spam toasts on background polling errors
     } finally {
       setLoading(false);
+      setRefreshing(false);
+      setHasLoadedOnce(true);
     }
   }
 
@@ -303,6 +326,8 @@ export default function ClawPage() {
     const id = setInterval(() => { void loadGame(); }, 3000);
     return () => clearInterval(id);
   }, [address]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sessionsSheetLoading = !hasLoadedOnce && loading;
 
   // ── Actions ────────────────────────────────────────────────────────────────
   async function getWalletClient() {
@@ -358,11 +383,8 @@ export default function ClawPage() {
         const { parseEventLogs } = await import("viem");
         const [startedEvent] = parseEventLogs({ abi: gameStartedAbi, logs: receipt.logs });
         if (startedEvent?.args?.sessionId != null) {
-          void fetch("/api/claw/settle", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionId: startedEvent.args.sessionId.toString() }),
-          });
+          setActionLoading("resolve");
+          await requestAutoSettle(startedEvent.args.sessionId, { force: true });
         }
       } catch { /* parsing failed — cron will retry */ }
 
@@ -378,23 +400,27 @@ export default function ClawPage() {
     if (!address) { toast.error("Connect your wallet first."); return; }
     try {
       setActionLoading(`${action}-${sessionId.toString()}`);
+
+      if (action === "settle" || action === "claim") {
+        await requestAutoSettle(sessionId, { force: true });
+        await loadGame();
+        toast.success("Refreshing reward status…");
+        return;
+      }
+
       const wc = await getWalletClient();
       const hash = await wc.writeContract({
         chain: clawChain,
         address: CLAW_GAME_ADDRESS,
         abi: clawGameAbi,
         functionName:
-          action === "settle" ? "settleGame" :
-          action === "claim"  ? "claimReward" :
-                                "burnVoucherReward",
+          "burnVoucherReward",
         account: address as `0x${string}`,
         args: [sessionId],
       });
       await publicClient.waitForTransactionReceipt({ hash, confirmations: 1, timeout: 120_000 });
       toast.success(
-        action === "settle" ? "✨ Outcome revealed!" :
-        action === "claim"  ? "🎉 Reward claimed!"   :
-                              "Voucher redeemed for fallback reward.",
+        "Voucher redeemed for fallback reward.",
       );
       await loadGame();
     } catch (err: any) {
@@ -406,11 +432,11 @@ export default function ClawPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   const isAnyLoading = !!actionLoading;
-  const canPlay = !!address && !!selectedConfig && !isAnyLoading && !loading && hasSufficientBalance;
+  const canPlay = !!address && !!selectedConfig && !isAnyLoading && hasSufficientBalance;
 
   const playLabel = (() => {
     if (actionLoading === "start") return "Starting…";
-    if (loading && !sessions.length) return "Loading…";
+    if (!hasLoadedOnce && loading && !sessions.length) return "Loading…";
     if (!address) return "Connect wallet to play";
     if (!hasSufficientBalance) {
       return selectedConfig?.payInMiles ? "Not enough Miles" : "Not enough USDT";
@@ -476,7 +502,7 @@ export default function ClawPage() {
         </div>
 
         {/* ── Active session banner ── */}
-        {activeSession && (gameState === "ready" || gameState === "settled" || gameState === "settling" || gameState === "pending") && (
+        {activeSession && (activeSession.status === "pending" || activeSession.status === "settled" || activeSession.status === "claimed") && (
           <div className="mt-2">
             <ClawActionBanner
               session={activeSession}
@@ -529,7 +555,8 @@ export default function ClawPage() {
         onOpenChange={setSessionsOpen}
         sessions={sessions}
         tierConfigs={tierConfigs}
-        loading={loading}
+        loading={sessionsSheetLoading}
+        refreshing={refreshing}
         actionLoading={actionLoading}
         onAction={handleSessionAction}
       />
