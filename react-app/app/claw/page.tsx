@@ -169,6 +169,9 @@ export default function ClawPage() {
         settleRequestsRef.current.delete(key);
       } else if (res.status === 202) {
         settleRequestsRef.current.set(key, Date.now() + 5000);
+      } else if (res.status === 503) {
+        // Vault underfunded — back off 2 minutes to avoid hammering
+        settleRequestsRef.current.set(key, Date.now() + 120_000);
       } else {
         settleRequestsRef.current.set(key, Date.now() + 8000);
       }
@@ -469,9 +472,13 @@ export default function ClawPage() {
       setActionLoading(`${action}-${sessionId.toString()}`);
 
       if (action === "settle" || action === "claim") {
-        await requestAutoSettle(sessionId, { force: true });
+        const result = await requestAutoSettle(sessionId, { force: true });
         await loadGame();
-        toast.success("Refreshing reward status…");
+        if (result?.error) {
+          toast.error(result.error);
+        } else {
+          toast.success("Refreshing reward status…");
+        }
         return;
       }
 

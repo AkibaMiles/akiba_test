@@ -17,7 +17,7 @@ import { useWeb3 } from '@/contexts/useWeb3';
 import { fetchSpendMerchants, type SpendMerchant } from '@/helpers/spendMerchants';
 import type { Address } from 'viem'
 import type { PhysicalSpendRaffle } from "@/components/physical-raffle-sheet";
-import { Dice, RaffleImg1, RaffleImg2, RaffleImg3, airpods, laptop, bicycle, nft1, nft2, RaffleImg5, oraimo, smartwatch, speaker, sambuds, credo, promo, itel, amaya, jbl, vitron, leshan, WinImg } from '@/lib/img';
+import { Dice, RaffleImg1, RaffleImg2, RaffleImg3, airpods, laptop, bicycle, nft1, nft2, RaffleImg5, oraimo, smartwatch, speaker, sambuds, credo, promo, itel, amaya, jbl, vitron, leshan, WinImg, claw } from '@/lib/img';
 import { Coin, akibaMilesSymbol } from '@/lib/svg';
 import { Question } from '@phosphor-icons/react';
 import { StaticImageData } from 'next/image';
@@ -132,7 +132,7 @@ const nftRaffles = [
 
 const upcomingGames = [
   { name: "Dice", date: "xx/xx/xx", image: Dice },
-  { name: "Claw", date: "Live", image: WinImg },
+  { name: "Claw", date: "Live", image: claw },
   { name: "Coin flip", date: "xx/xx/xx", image: Coin },
 ];
 
@@ -373,7 +373,7 @@ const Page = () => {
       </div>
 
       <div>
-        <SectionHeading title="Upcoming games" />
+        <SectionHeading title="Games" />
         <div className="flex space-x-3 overflow-x-auto px-4">
   {upcomingGames.map((game, idx) => {
     const locked = !['Dice', 'Claw'].includes(game.name); // live games

@@ -14,6 +14,14 @@ function fmtUsdt(raw: bigint) {
   return `$${Number(formatUnits(raw, 6)).toFixed(2)} USDT`;
 }
 
+function buildXShareUrl(rewardClass: "rare" | "legendary"): string {
+  const discount = rewardClass === "legendary" ? "100%" : "20%";
+  const emoji    = rewardClass === "legendary" ? "⭐" : "🎫";
+  const appUrl   = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  const text = `Just won a ${discount} off voucher on Akiba Claw! ${emoji} Valid at any participating merchant. #AkibaClaw #Web3${appUrl ? `\n${appUrl}` : ""}`;
+  return `https://x.com/intent/tweet?text=${encodeURIComponent(text)}`;
+}
+
 function buildVoucherQrUrl(session: ClawSessionView, tierConfig: ClawTierConfig): string {
   const discountBps =
     session.rewardClass === "legendary"
@@ -208,6 +216,19 @@ export function VoucherWinSheet({
           >
             {isBurning ? "Processing…" : `Take ${burnLabel} instead`}
           </button>
+
+          {/* Tertiary: Share on X */}
+          <a
+            href={buildXShareUrl(rc)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 flex w-full items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold text-slate-400 transition hover:text-slate-700 active:scale-[0.97]"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M9.16 6.77 14.43 0h-1.25L8.6 5.9 4.72 0H.5l5.54 7.87L.5 16h1.25l4.84-5.45L10.78 16H15L9.16 6.77Zm-1.71 1.93-.56-.78L2.24 1.04h1.92l3.6 5.02.56.78 4.67 6.52h-1.92L7.45 8.7Z"/>
+            </svg>
+            Share your win on X
+          </a>
         </div>
       </SheetContent>
     </Sheet>

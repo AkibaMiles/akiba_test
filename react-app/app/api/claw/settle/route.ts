@@ -170,6 +170,11 @@ function isIgnorableClaimError(err: any) {
   );
 }
 
+function isVaultInsufficientError(err: any) {
+  const msg = `${err?.shortMessage ?? ""} ${err?.details ?? ""} ${err?.message ?? ""}`.toLowerCase();
+  return msg.includes("insufficientbalance") || msg.includes("insufficient balance");
+}
+
 /* ─── Route ───────────────────────────────────────────────────────────────── */
 
 export async function POST(req: Request) {
@@ -431,6 +436,19 @@ export async function POST(req: Request) {
           continue;
         } catch (err: any) {
           if (!isIgnorableClaimError(err)) {
+            if (isVaultInsufficientError(err)) {
+              await traceClawSettle({
+                sessionId: sid,
+                phase: "vault_insufficient",
+                level: "error",
+                message: "Vault has insufficient USDT to pay reward",
+              });
+              inFlightSessions.delete(sessionKey);
+              return NextResponse.json(
+                { error: "Reward vault is low on USDT — please contact support." },
+                { status: 503 }
+              );
+            }
             await traceClawSettle({
               sessionId: sid,
               phase: "claim_failed",

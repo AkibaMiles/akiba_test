@@ -570,6 +570,14 @@ contract AkibaClawGame is
         to.transfer(amount);
     }
 
+    /// @notice Rescue ERC-20 tokens accidentally sent directly to this contract. Admin only.
+    ///         The game never holds ERC-20 balances during normal operation — any balance
+    ///         here is accidental and safe to sweep.
+    function rescueToken(address token, address to, uint256 amount) external onlyOwner {
+        require(to != address(0), "zero addr");
+        IERC20(token).safeTransfer(to, amount);
+    }
+
     /// @notice Refund a session that has been stuck in Pending beyond a reasonable timeout.
     ///         Returns the play cost to the player. Admin only.
     function emergencyRefund(uint256 sessionId) external onlyOwner nonReentrant {

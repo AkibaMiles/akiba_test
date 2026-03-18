@@ -25,7 +25,7 @@ import jbl from "../public/img/jbl.jpg"
 import oraimo from "../public/img/oraimo.jpg"
 import smartwatch from "../public/img/smartwatch.jpg"
 import leshan from "../public/img/leshan.jpg"
-
+import claw from "../public/img/claw.jpg"
 export {
   WinImg,
   RaffleImg1,
@@ -34,6 +34,7 @@ export {
   RaffleImg4,
   RaffleImg5,
   laptop,
+  claw,
   Dice,
   bicycle,
   airpods,
