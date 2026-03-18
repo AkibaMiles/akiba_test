@@ -37,18 +37,14 @@ const config: HardhatUserConfig = {
 
   },
   etherscan: {
-    apiKey: {
-      celo:            process.env.CELOSCAN_API_KEY   ?? '',
-      celoSepolia:     process.env.CELOSCAN_API_KEY   ?? '',
-      optimism:        process.env.OPSCAN_API_KEY      ?? '',
-      optimismSepolia: process.env.OPSCAN_API_KEY      ?? '',
-    },
+    // hardhat-verify v2+ requires a single API key (not per-network)
+    apiKey: process.env.CELOSCAN_API_KEY ?? '',
     customChains: [
       {
         chainId: 11142220,
         network: 'celoSepolia',
         urls: {
-          apiURL: 'https://api-alfajores.celoscan.io/api',
+          apiURL: 'https://api-alfajores.celoscan.io/v2/api',
           browserURL: 'https://alfajores.celoscan.io',
         },
       },
@@ -56,7 +52,7 @@ const config: HardhatUserConfig = {
         chainId: 42_220,
         network: 'celo',
         urls: {
-          apiURL: 'https://api.celoscan.io/api',
+          apiURL: 'https://api.celoscan.io/v2/api',
           browserURL: 'https://celoscan.io/',
         },
       },
@@ -64,7 +60,7 @@ const config: HardhatUserConfig = {
         chainId: 10,
         network: 'optimism',
         urls: {
-          apiURL: 'https://api-optimistic.etherscan.io/api',
+          apiURL: 'https://api-optimistic.etherscan.io/v2/api',
           browserURL: 'https://optimistic.etherscan.io/',
         },
       },
@@ -72,7 +68,7 @@ const config: HardhatUserConfig = {
         chainId: 11155420,
         network: 'optimismSepolia',
         urls: {
-          apiURL: 'https://api-sepolia-optimistic.etherscan.io/api',
+          apiURL: 'https://api-sepolia-optimistic.etherscan.io/v2/api',
           browserURL: 'https://sepolia-optimistic.etherscan.io/',
         },
       },

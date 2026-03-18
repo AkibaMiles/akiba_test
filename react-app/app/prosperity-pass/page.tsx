@@ -24,6 +24,28 @@ import { claimProsperityPassForAddress } from "@/lib/prosperity-pass-claim";
 
 const REQUIRED_MILES = 100;
 
+function describeBurnError(err: any) {
+  const message =
+    err?.shortMessage ||
+    err?.details ||
+    err?.message ||
+    "We couldn't burn your AkibaMiles. Please try again.";
+
+  if (/wrong network/i.test(message)) {
+    return "Switch to Celo Mainnet, then try again.";
+  }
+
+  if (/insufficient funds/i.test(message)) {
+    return "Your wallet doesn't have enough CELO for gas.";
+  }
+
+  if (/user rejected|user denied|rejected/i.test(message)) {
+    return "You cancelled the transaction in your wallet.";
+  }
+
+  return message;
+}
+
 export default function ProsperityPassOnboarding() {
   const router = useRouter();
   const [api, setApi] = useState<CarouselApi | null>(null);
@@ -109,9 +131,7 @@ const runClaimFlow = async () => {
       // User cancelled in wallet → just tell them, no refund
       setSubmitError("You cancelled the transaction in your wallet.");
     } else {
-      setSubmitError(
-        "We couldn't burn your AkibaMiles. Please try again."
-      );
+      setSubmitError(describeBurnError(err));
     }
 
     setIsSubmitting(false);

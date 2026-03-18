@@ -9,7 +9,7 @@ type Props = {
   onSettle: () => void;
   onClaim: () => void;
   onBurn: () => void;
-};
+}
 
 function fmtMiles(raw: bigint) {
   return `${Number(formatUnits(raw, 18)).toLocaleString(undefined, { maximumFractionDigits: 0 })} Miles`;
@@ -29,7 +29,6 @@ const RESULT_CFG = {
 
 export function ClawActionBanner({ session, actionLoading, onSettle, onClaim, onBurn }: Props) {
   const sid = session.sessionId.toString();
-  const isLoadingClaim  = actionLoading === `claim-${sid}`;
   const isLoadingBurn   = actionLoading === `burn-${sid}`;
   const anyLoading = !!actionLoading;
 
@@ -54,9 +53,6 @@ export function ClawActionBanner({ session, actionLoading, onSettle, onClaim, on
     const cfg = RESULT_CFG[rc] ?? RESULT_CFG.none;
     const isVoucher = rc === "rare" || rc === "legendary";
     const isLose    = rc === "lose";
-    const burnLabel =
-      rc === "rare"      ? fmtMiles(session.rewardAmount) :
-      rc === "legendary" ? fmtUsdt(session.rewardAmount)  : "";
 
     return (
       <div className={`rounded-2xl border px-3 py-2.5 ${cfg.bg}`}>
@@ -88,7 +84,6 @@ export function ClawActionBanner({ session, actionLoading, onSettle, onClaim, on
     const burnLabel =
       rc === "rare"      ? fmtMiles(session.rewardAmount) :
       rc === "legendary" ? fmtUsdt(session.rewardAmount)  : "";
-
     return (
       <div className={`rounded-2xl border px-3 py-2.5 ${cfg.bg}`}>
         <div className="flex items-center gap-2">

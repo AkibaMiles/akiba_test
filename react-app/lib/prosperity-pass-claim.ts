@@ -19,11 +19,18 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   );
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+const supabase =
+  SUPABASE_URL && SUPABASE_SERVICE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    : null;
 
 /* ───────────────── Internal helpers ───────────────── */
 
 export async function getUsernameForAddress(address: string): Promise<string | null> {
+  if (!supabase) {
+    return null;
+  }
+
   try {
     const { data, error } = await supabase
       .from("users")

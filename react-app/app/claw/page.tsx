@@ -38,6 +38,7 @@ import { ClawTierSelector } from "@/components/claw/ClawTierSelector";
 import { ClawMachineDisplay, type ClawGameState } from "@/components/claw/ClawMachineDisplay";
 import { ClawActionBanner } from "@/components/claw/ClawActionBanner";
 import { BatchInventoryBar } from "@/components/claw/BatchInventoryBar";
+import { VoucherWinSheet } from "@/components/claw/VoucherWinSheet";
 
 const clawChain = defineChain({
   id: CLAW_CHAIN_ID,
@@ -70,6 +71,7 @@ export default function ClawPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [infoOpen, setInfoOpen]           = useState(false);
   const [sessionsOpen, setSessionsOpen]   = useState(false);
+  const [voucherSheetSeen, setVoucherSheetSeen] = useState<string | null>(null);
   const settleRequestsRef = useRef<Map<string, number>>(new Map());
   const batchEnsureRef = useRef<number>(0);
 
@@ -500,6 +502,12 @@ export default function ClawPage() {
   const batchReady = !BATCH_RNG_ADDRESS || batchInventory?.active !== false;
   const canPlay = !!address && !!selectedConfig && !isAnyLoading && hasSufficientBalance && batchReady;
 
+  const voucherSheetOpen =
+    !!activeSession &&
+    (activeSession.rewardClass === "rare" || activeSession.rewardClass === "legendary") &&
+    (activeSession.status === "settled" || activeSession.status === "claimed") &&
+    voucherSheetSeen !== activeSession.sessionId.toString();
+
   const playLabel = (() => {
     if (actionLoading === "start") return "Starting…";
     if (!hasLoadedOnce && loading && !sessions.length) return "Loading…";
@@ -634,6 +642,25 @@ export default function ClawPage() {
         selectedConfig={selectedConfig}
         tierConfigs={tierConfigs}
       />
+
+      {activeSession &&
+        (activeSession.rewardClass === "rare" || activeSession.rewardClass === "legendary") &&
+        tierConfigs[activeSession.tierId] && (
+        <VoucherWinSheet
+          open={voucherSheetOpen}
+          onOpenChange={(open) => {
+            if (!open) setVoucherSheetSeen(activeSession.sessionId.toString());
+          }}
+          session={activeSession}
+          tierConfig={tierConfigs[activeSession.tierId]!}
+          actionLoading={actionLoading}
+          onBurn={() => {
+            setVoucherSheetSeen(activeSession.sessionId.toString());
+            void handleSessionAction(activeSession.sessionId, "burn");
+          }}
+          onKeep={() => setVoucherSheetSeen(activeSession.sessionId.toString())}
+        />
+      )}
     </main>
   );
 }

@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 
 const BATCH_RNG_ADDRESS = (process.env.NEXT_PUBLIC_BATCH_RNG_ADDRESS ?? "") as `0x${string}`;
 const CELO_RPC_URL = process.env.CELO_RPC_URL ?? "https://forno.celo.org";
-const ADMIN_PK = process.env.PRIVATE_KEY;
+const ADMIN_PK = process.env.BADGES_RELAYER_KEY;
 
 const BATCH_SIZE = 1000;
 
@@ -116,7 +116,7 @@ export async function ensureActiveClawBatch(
     };
   }
 
-  if (!ADMIN_PK) throw new Error("PRIVATE_KEY not set — cannot open batch");
+  if (!ADMIN_PK) throw new Error("BADGES_RELAYER_KEY not set — cannot open batch");
 
   logger?.("Batch exhausted — generating new batch…");
 

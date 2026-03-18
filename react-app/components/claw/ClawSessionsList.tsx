@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useMemo, useState } from "react";
 import { ClockCountdown, Gift, HandTap, Sparkle, Trophy } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,24 @@ import {
   type ClawSessionView,
   type ClawTierConfig,
 } from "@/lib/clawGame";
+
+function buildVoucherQrUrl(session: ClawSessionView, tierConfig: ClawTierConfig): string {
+  const discountBps =
+    session.rewardClass === "legendary"
+      ? tierConfig.legendaryVoucherBps
+      : tierConfig.rareVoucherBps;
+  const expiresAt = new Date(
+    (Number(session.settledAt) + 14 * 24 * 3600) * 1000,
+  ).toISOString();
+  const payload = JSON.stringify({
+    type: "claw_voucher",
+    voucherId: session.voucherId.toString(),
+    owner: session.player,
+    discountBps,
+    expiresAt,
+  });
+  return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(payload)}`;
+}
 
 type Props = {
   open: boolean;
@@ -194,6 +213,37 @@ export function ClawSessionsList({
                   </div>
                 </div>
               ) : null}
+
+              {/* ── Voucher QR card (claimed rare/legendary with a live voucherId) ── */}
+              {selectedSession.status === "claimed" &&
+              (selectedSession.rewardClass === "rare" || selectedSession.rewardClass === "legendary") &&
+              selectedSession.voucherId > 0n &&
+              tierConfigs[selectedSession.tierId] ? (() => {
+                const tc = tierConfigs[selectedSession.tierId]!;
+                const label = selectedSession.rewardClass === "legendary" ? "100% off voucher" : "20% off voucher";
+                const qrUrl = buildVoucherQrUrl(selectedSession, tc);
+                const expiryDate = new Date(
+                  (Number(selectedSession.settledAt) + 14 * 24 * 3600) * 1000,
+                ).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+                return (
+                  <div className="mt-4 rounded-[24px] border border-slate-200 bg-white p-4">
+                    <div className="mb-3 text-center">
+                      <p className="text-sm font-semibold text-slate-900">{label}</p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">Valid at any participating merchant</p>
+                    </div>
+                    <div className="flex justify-center">
+                      <Image src={qrUrl} alt="Voucher QR code" width={200} height={200} unoptimized />
+                    </div>
+                    <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-center">
+                      <p className="text-[10px] text-slate-400">Voucher ID</p>
+                      <p className="mt-1 font-mono text-sm font-semibold text-slate-800">
+                        #{selectedSession.voucherId.toString()}
+                      </p>
+                    </div>
+                    <p className="mt-2 text-center text-[10px] text-slate-400">Expires {expiryDate}</p>
+                  </div>
+                );
+              })() : null}
 
               <div className="mt-5 flex flex-col gap-3">
                 {selectedSession.status === "pending" ? (

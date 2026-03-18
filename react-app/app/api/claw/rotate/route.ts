@@ -11,6 +11,8 @@
 
 import { NextResponse } from "next/server";
 import { createPublicClient, createWalletClient, http, parseAbi } from "viem";
+
+export const maxDuration = 60; // allow time for Merkle tree gen + on-chain tx
 import { celo } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { StandardMerkleTree } from "@openzeppelin/merkle-tree";
